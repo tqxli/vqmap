@@ -1,0 +1,39 @@
+name: mouse22
+num_keypoint: 20
+keypoint_names: 
+  - EarL
+  - EarR
+  - Snout
+  - SpineF
+  - SpineM
+  - TailBase
+  - TailMid
+  - TailEnd
+  - ForepawL
+  - WristL
+  - ELbowL
+  - ShoulderL
+  - ForepawR
+  - WristR
+  - ELbowR
+  - ShoulderR
+  - HindpawL
+  - AnkleL
+  - KneeL
+  - HindpawR
+  - AnkleR
+  - KneeR
+
+# two keypoints are removed as well
+indices_reorder: [4, 3, 0, 1, 2, 5, 11, 10, 9, 8, 15, 14, 13, 12, 18, 17, 16, 21, 20, 19]
+
+kinematic_tree: 
+  - [0, 1, 2, 3, 4],
+  - [0, 5],
+  - [1, 6, 7, 8, 9],
+  - [1, 10, 11, 12, 13],
+  - [0, 14, 15, 16],
+  - [0, 17, 18, 19]
+
+anterior: 1
+posterior: 0

@@ -5,11 +5,12 @@ MIT license
 """
 import warnings
 import torch.optim as optim
+from loguru import logger
 
 
-def get_optimizer(optimizer_name, parameters, config, logger=None):
+def get_optimizer(optimizer_name, parameters, config):
     if logger:
-        logger.log('creating [{}] from Config({})'.format(optimizer_name, config))
+        logger.info('creating [{}] from Config({})'.format(optimizer_name, config))
     if optimizer_name == 'adam':
         if set(config.keys()) - {'learning_rate', 'betas', 'eps',
                                  'weight_decay', 'amsgrad', 'name'}:
@@ -52,5 +53,5 @@ def get_lr_scheduler(scheduler_name, optimizer, config, logger=None):
         lr_scheduler = None
     
     if (logger is not None) and (lr_scheduler is not None):
-        logger.log('Created [{}] from Config({})'.format(scheduler_name, config))
+        logger.info('Created [{}] from Config({})'.format(scheduler_name, config))
     return lr_scheduler

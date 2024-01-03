@@ -1,0 +1,14 @@
+name: human_uestc
+num_keypoint: 18
+keypoint_names: None
+indices_reorder: [8, 1, 2, 3, 4, 5, 6, 7, 0, 9, 10, 11, 12, 13, 14, 21, 24, 38]
+
+kinematic_tree: 
+  - [0, 12, 13, 14, 15]
+  - [0, 9, 10, 11, 16]
+  - [0, 1, 8, 17]
+  - [1, 5, 6, 7]
+  - [1, 2, 3, 4]
+
+anterior: 1
+posterior: 0

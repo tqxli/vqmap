@@ -6,33 +6,29 @@ import scipy.io as sio
 from vqmap.utils.quaternion import *
 from vqmap.utils.skeleton import skeleton_initialize, skeleton_initialize_v2
 from tqdm import tqdm
-
+from loguru import logger
 
 class MocapContBase(Dataset):
     """
     Parse continuous motion capture data
     """
     def __init__(
-        self, datapath, seqlen,
-        skeleton='rat23',
-        data_rep='xyz', 
-        stride=1, downsample=1, scale=1,
-        normalize=False,
+        self, datapath, cfg
     ):
         super().__init__()
         
         self.datapath = datapath
-        self.seqlen = seqlen
+        self.seqlen = seqlen = cfg.seqlen
         self.max_len = seqlen
         
         # data representations
-        self.data_rep = data_rep
-        assert data_rep in ['xyz', 'quat', 'cont6d']
-        self.pose_profile = skeleton_initialize_v2(skeleton)
-        self.stride = stride
-        self.downsample = downsample
-        self.scale = scale
-        self.normalize = normalize
+        self.data_rep = cfg.get('data_rep', 'xyz')
+        assert self.data_rep in ['xyz', 'quat', 'cont6d']
+        self.pose_profile = skeleton_initialize_v2(cfg.skeleton)
+        self.stride = cfg.stride
+        self.downsample = cfg.downsample
+        self.scale = cfg.scale
+        self.normalize = cfg.normalize
 
         self._load_data()
     
@@ -40,6 +36,7 @@ class MocapContBase(Dataset):
         """ Load raw motion capture data from the List datapath
         """
         self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
 
         for dp in self.datapath:
             data = self._load(dp)
@@ -50,11 +47,10 @@ class MocapContBase(Dataset):
             data = self._convert(self.data_rep, data)
             
             self.pose3d.append(data)
-        
+
         self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).flatten(1)
         self.pose_dim = self.pose3d.shape[-1]
-
-        print(f"Dataset size: {self.pose3d.shape}")
+        logger.info(f"Dataset chunking: {self.raw_num_frames} --> {self.pose3d.shape}")
     
     def __len__(self):
         return (sum(self.num_frames) - self.seqlen) // self.stride + 1
@@ -71,6 +67,7 @@ class MocapContBase(Dataset):
         data = sio.loadmat(datapath)["pred"]
         data = np.transpose(data, (0, 2, 1))
         assert data.shape[-1] == 3
+        self.raw_num_frames += len(data)
         return data
     
     def _trim(self, data):
@@ -121,21 +118,37 @@ class MocapContBase(Dataset):
 class MocapChunkBase(Dataset):
     def __init__(
         self,
-        datapath, seqlen,
-        kind='xyz',
-        sampling="conseq", sampling_step=1,
+        datapath, cfg
     ):
         super().__init__()
         
         self.datapath = datapath
-        self.seqlen = seqlen
+        self.seqlen = seqlen = cfg.seqlen
         
         self.max_len = seqlen
-        self.sampling = sampling
-        self.sampling_step = sampling_step
+        self.sampling = cfg.sampling
+        self.sampling_step = cfg.sampling_step
         
-        self.kind = kind
+        self.data_rep = cfg.data_rep
         self._load_data()
+    
+    def _load_data(self):
+        data = np.load(self.datapath, allow_pickle=True)
+
+        pose3d = data['joints3D']
+        # should be already normalized
+        self.num_joints = pose3d[0].shape[1]
+        self.pose3d, self._num_frames = [], []
+        for poseseq in pose3d:
+            poseseq -= poseseq[:, :1]
+            poseseq = np.stack([-poseseq[:, :, 1], poseseq[:, :, 0], poseseq[:, :, 2]], axis=-1)
+            
+            poseseq = poseseq.reshape((poseseq.shape[0], -1)) * 8
+            self.pose3d.append(poseseq)
+            self._num_frames.append(poseseq.shape[0])
+
+        self.actions = data['y']
+        assert len(self.pose3d) == len(self.actions)
     
     def action_to_action_name(self, action):
         return self._action_classes[action]
@@ -195,3 +208,29 @@ class MocapChunkBase(Dataset):
         action = self.actions[data_index]
         
         return poseseq, action
+
+    def __len__(self):
+        return len(self.actions)
+    
+    def __getitem__(self, index):
+        return self._get_item_data_index(index)
+    
+
+if __name__ == "__main__":
+    from omegaconf import OmegaConf
+    import os
+    # cfg = OmegaConf.load('configs/dataset.yaml')
+    
+    # datapath = os.listdir(cfg.dataset.root)[:2]
+    # datapath = [os.path.join(cfg.dataset.root, dp, 'SDANNCE', 'bsl0.5_FM', 'save_data_AVG0.mat') for dp in datapath]
+    # dataset = MocapContBase(datapath, cfg.dataset)
+    # poseseq, _ = dataset[0]
+    # logger.info(poseseq.shape)
+    # logger.info(f"Total samples: {len(dataset)}")
+    
+    cfg = OmegaConf.load('configs/dataset_chunk.yaml')
+    datapath = cfg.dataset.root
+    dataset = MocapChunkBase(datapath, cfg.dataset)
+    poseseq, _ = dataset[0]
+    logger.info(poseseq.shape)
+    logger.info(f"Total samples: {len(dataset)}")

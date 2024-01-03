@@ -1,5 +1,8 @@
+loguru
 numpy
+pandas
 pyyaml
 scipy
+tables
 tensorboard
 tqdm

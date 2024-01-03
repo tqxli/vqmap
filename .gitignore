@@ -1,0 +1,9 @@
+configs/*
+experiments/*
+vqmap/__pycache__
+vqmap/datasets/__pycache__
+vqmap/models/__pycache__
+vqmap/optimizers/__pycache__
+vqmap/trainer/__pycache__
+vqmap/utils/__pycache__
+VQMAP.egg-info

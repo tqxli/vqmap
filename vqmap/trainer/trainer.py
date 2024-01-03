@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import tqdm
 from vqmap.trainer.base import EngineBase
 from vqmap.utils.serialize import flatten_dict
-
+from loguru import logger
 
 def cur_step(cur_epoch, idx, N, fmt=None):
     _cur_step = cur_epoch + idx / N
@@ -47,7 +47,7 @@ class TrainerEngine(EngineBase):
         loss_names = list(loss_dict.keys())
         valid_losses /= total_num_samples
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, valid_losses))
-        self.logger.log(f"Epoch: {cur_epoch} Valid loss {tot_losses/total_num_samples} | {losses_str}")
+        logger.info(f"Epoch: {cur_epoch} Valid loss {tot_losses/total_num_samples} | {losses_str}")
         for name, loss in zip(loss_names, valid_losses):
             self.tb_logger.add_scalar(f'val/{name}', loss, cur_epoch)
         return valid_losses[0]
@@ -159,13 +159,13 @@ class TrainerEngine(EngineBase):
             #     loss_dict = {'{}{}'.format(prefix, key): val
             #                  for key, val in loss_dict.items()}
             #     loss_dict['step'] = cur_step(cur_epoch, idx, generator_len)
-            #     self.logger.report(loss_dict,
+            #     logger.report(loss_dict,
             #                        prefix='[Train] Report @step: ')
         
         loss_names = list(loss_dict.keys())
         train_losses /= total_num_samples
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
-        self.logger.log(f"Epoch: {cur_epoch} Total Loss: {tot_losses/total_num_samples} | {losses_str}")
+        logger.info(f"Epoch: {cur_epoch} Total Loss: {tot_losses/total_num_samples} | {losses_str}")
         for name, loss in zip(loss_names, train_losses):
             self.tb_logger.add_scalar(f'train/{name}', loss, cur_epoch)
 
@@ -183,11 +183,11 @@ class TrainerEngine(EngineBase):
 
         prefix = 'train__'
         eval_prefix = ''
-        self.logger.log('start train')
+        logger.info('Start train ...')
 
         self.model_to_device()
         if self.config.train.get('use_fp16'):
-            self.logger.log('Train with half precision')
+            logger.info('Train with half precision')
             self.to_half()
 
         best_score = 0
@@ -219,8 +219,8 @@ class TrainerEngine(EngineBase):
             elasped = datetime.datetime.now() - dt
             expected_total = elasped / (cur_epoch + 1) * n_epochs
             expected_remain = expected_total - elasped
-            self.logger.log('expected remain {}'.format(expected_remain))
-        self.logger.log('finish train, takes {}'.format(datetime.datetime.now() - dt))
+            logger.info('expected remain {}'.format(expected_remain))
+        logger.info('finish train, takes {}'.format(datetime.datetime.now() - dt))
 
     def report_scores(self, step, scores, metadata, prefix=''):
         report_dict = {data_key: flatten_dict(_scores, sep='_')
@@ -233,10 +233,10 @@ class TrainerEngine(EngineBase):
         if 'lr' in metadata:
             report_dict['{}lr'.format(prefix)] = metadata['lr']
 
-        self.logger.report(report_dict,
+        logger.report(report_dict,
                            prefix='[Eval] Report @step: ',
                            pretty=True)
 
         tracker_data['metadata'] = metadata
         tracker_data['scores'] = scores
-        self.logger.update_tracker(tracker_data)
+        logger.update_tracker(tracker_data)

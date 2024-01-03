@@ -1,0 +1,21 @@
+name: moseq_dlc2d
+num_keypoint: 8
+keypoint_names: 
+  - spine4
+  - spine3
+  - spine2
+  - spine1
+  - head
+  - nose
+  - rightEar
+  - leftEar
+# body center must be at index 0
+indices_reorder: [2, 1, 0, 3, 4, 5, 6, 7]
+kinematic_tree: 
+  - [0, 1, 2]
+  - [0, 3, 4]
+  - [6, 4, 5]
+  - [7, 4, 5]
+
+anterior: 5
+posterior: 2

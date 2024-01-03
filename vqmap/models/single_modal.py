@@ -6,7 +6,7 @@ from torch import Tensor
 from torch.distributions.distribution import Distribution
 from typing import List, Optional
 from vqmap.losses.kl import KLLoss
-import vqmap.models.vq as quantizers
+import vqmap.models.quantizer as quantizers
 import vqmap.models.encoder as encoders
 import vqmap.models.decoder as decoders
 from vqmap.models.gpt import Block

@@ -9,11 +9,11 @@ import json
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from vqmap.models import get_model
+from vqmap.models import get_model, initialize_model
 from vqmap.optimizers import get_optimizer, get_lr_scheduler
 
 from vqmap.utils.serialize import torch_safe_load
-from vqmap.config.config import parse_config
+from loguru import logger
 
 class EngineBase(object):
     def __init__(self, device='cuda'):
@@ -25,14 +25,14 @@ class EngineBase(object):
         self.evaluator = None
 
         self.config = None
-        self.logger = None
+        # self.logger = None
 
         self.metadata = {}
 
     def create(self, config, verbose=False):
         self.config = config
-        self.set_model(get_model(config.model))
-        self.logger.log('Total params: %.2fM' % (sum(p.numel() for p in self.model.parameters()) / 1000000.0))
+        self.set_model(initialize_model(config.model))
+        logger.info('Total params: %.2fM' % (sum(p.numel() for p in self.model.parameters()) / 1000000.0))
 
         params = [param for param in self.model.parameters()
                   if param.requires_grad]
@@ -43,12 +43,12 @@ class EngineBase(object):
         self.set_lr_scheduler(get_lr_scheduler(config.lr_scheduler.name,
                                                self.optimizer,
                                                config.lr_scheduler,
-                                               self.logger))
+                                               logger))
 
-        self.logger.log('Engine is created.')
-        self.logger.log(config)
+        logger.info('Engine is created.')
+        logger.info(config)
 
-        self.logger.update_tracker({'full_config': config}, keys=['full_config'])
+        # logger.update_tracker({'full_config': config}, keys=['full_config'])
 
     def set_model(self, model):
         self.model = model
@@ -65,7 +65,7 @@ class EngineBase(object):
         self.lr_scheduler = lr_scheduler
 
     def set_logger(self, logger):
-        self.logger = logger
+        logger = logger
     
     def set_tb(self, tb_logger):
         self.tb_logger = tb_logger
@@ -79,7 +79,7 @@ class EngineBase(object):
     @torch.no_grad()
     def evaluate(self, val_loaders, n_crossfolds=None, **kwargs):
         if self.evaluator is None:
-            self.logger.log('[Evaluate] Warning, no evaluator is defined. Skip evaluation')
+            logger.info('[Evaluate] Warning, no evaluator is defined. Skip evaluation')
             return
 
         self.model_to_device()
@@ -90,7 +90,7 @@ class EngineBase(object):
 
         scores = {}
         for key, data_loader in val_loaders.items():
-            self.logger.log('Evaluating {}...'.format(key))
+            logger.info('Evaluating {}...'.format(key))
             _n_crossfolds = -1 if key == 'val' else n_crossfolds
             scores[key] = self.evaluator.evaluate(data_loader, n_crossfolds=_n_crossfolds,
                                                   key=key, **kwargs)
@@ -105,7 +105,7 @@ class EngineBase(object):
             'metadata': metadata,
         }
         torch.save(state_dict, save_to)
-        # self.logger.log('state dict is saved to {}, metadata: {}'.format(
+        # logger.info('state dict is saved to {}, metadata: {}'.format(
             # save_to, json.dumps(metadata, indent=4)))
 
     def load_models(self, state_dict_path, load_keys=None):
@@ -125,9 +125,9 @@ class EngineBase(object):
             try:
                 torch_safe_load(getattr(self, key), state_dict[key])
             except RuntimeError as e:
-                self.logger.log('Unable to import state_dict, missing keys are found. {}'.format(e))
+                logger.info('Unable to import state_dict, missing keys are found. {}'.format(e))
                 torch_safe_load(getattr(self, key), state_dict[key], strict=False)
-        self.logger.log('state dict is loaded from {} (hash: {}), load_key ({})'.format(state_dict_path,
+        logger.info('state dict is loaded from {} (hash: {}), load_key ({})'.format(state_dict_path,
                                                                                         model_hash,
                                                                                         load_keys))
 

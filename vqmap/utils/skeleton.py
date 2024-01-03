@@ -1,6 +1,7 @@
 from vqmap.utils.quaternion import *
 import scipy.ndimage.filters as filters
 import os
+from loguru import logger
 from vqmap.config.config import parse_config
 
 KINEMATIC_TREE = [
@@ -395,6 +396,15 @@ def unit_vector(vector):
     return vector / np.linalg.norm(vector)
 
 def rotation_matrix_from_vectors(vec1, vec2):
+    ndim = vec1.shape[-1]
+    if ndim == 2:
+        return _rotate_vec_2d(vec1, vec2)
+    elif ndim == 3:
+        return _rotate_vec_3d(vec1, vec2)
+    else:
+        raise Exception
+
+def _rotate_vec_3d(vec1, vec2):
     """ Find the rotation matrix that aligns vec1 to vec2
     :param vec1: A 3d "source" vector
     :param vec2: A 3d "destination" vector
@@ -408,12 +418,22 @@ def rotation_matrix_from_vectors(vec1, vec2):
     rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix
 
+def _rotate_vec_2d(vec1, vec2):
+    """ Same as above but 2D
+    """
+    a, b = (vec1 / np.linalg.norm(vec1)).reshape(2), (vec2 / np.linalg.norm(vec2)).reshape(2)
+    x1, y1 = a
+    x2, y2 = b
+    c = np.dot(a, b)
+    rotation_matrix = [[c, x2*y1-x1*y2], [x1*y2-x2*y1, c]]
+    return rotation_matrix
+
 class PoseProfile:
     def __init__(self, name, info):
         self.name = name
         self.info = info
         
-        self.joint_names = joint_names = info["keypoint_names"]
+        joint_names = info["keypoint_names"]
         self.num_keypoint = info["num_keypoint"]
 
         self.kinematic_tree = info["kinematic_tree"]
@@ -422,19 +442,22 @@ class PoseProfile:
         self.indices_reorder = indices_reorder = np.array(info["indices_reorder"])
         self.joint_names = [joint_names[idx] for idx in indices_reorder]
         
-        self.offsets = info["offsets"]
-        print(f"\nNumber of keypoints: {self.num_keypoint}")
-        print("Kinematic tree: ")
+        self.offsets = info.get("offsets", None)
+        logger.info(f"Pose profile: {name}")
+        logger.info(f"Number of keypoints: {self.num_keypoint}")
+        logger.info("Kinematic tree: ")
         for chain in self.kinematic_tree:
-            print('     Chain: ', [self.joint_names[idx] for idx in chain])
-        
+            logger.info(f'     Chain: {[self.joint_names[idx] for idx in chain]}')
+        logger.info(f"Align direction to +x: {self.joint_names[self.anterior]}-{self.joint_names[self.posterior]}")
+
     def align_pose(self, poses, align_z=False):
+        ndim = poses.shape[-1]
         poses = poses[:, self.indices_reorder, :]
         traj = poses[:, :1]
         poses = poses - traj
         spineline = poses[:, self.anterior] - poses[:, self.posterior]
         spineline = spineline[:, None, :]
-        if not align_z:
+        if not align_z and ndim == 3:
             spineline[:, :, 2] = 0
         spineline = unit_vector(spineline)
 

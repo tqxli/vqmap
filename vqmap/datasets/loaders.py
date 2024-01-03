@@ -6,16 +6,16 @@ from vqmap.datasets.mocap_ephys import MocapEphys
 from vqmap.datasets.mocap import Mocap, MocapUnannotated
 from vqmap.datasets.mocap_token import MocapTokenDataset, MocapTokenGTTargets
 from vqmap.datasets.rat7m import Rat7M
-from vqmap.datasets.calms import CalMS21
-from vqmap.datasets.moseq2d import Moseq2D
+# from vqmap.datasets.calms import CalMS21
+# from vqmap.datasets.moseq2d import Moseq2D
 from vqmap.datasets.human import *
 from vqmap.datasets.mocap_latent import MocapLatentDataset
 
 mapping = {
     "mocap": Mocap,
-    "rat7m": Rat7M,
-    "calms21": CalMS21,
-    "moseq2d": Moseq2D,
+    # "rat7m": Rat7M,
+    # "calms21": CalMS21,
+    # "moseq2d": Moseq2D,
     "humanact12": HumanAct12,
     "uestc": UESTC,
     "oms": OMS

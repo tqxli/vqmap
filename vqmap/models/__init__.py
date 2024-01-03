@@ -1,5 +1,6 @@
-from vqmap.models.mono_model import MONO
-from vqmap.models.mono_v2 import MONO_v2
+# from vqmap.models.mono_model import MONO
+# from vqmap.models.mono_v2 import MONO_v2
+from vqmap.models.seqvae import *
 from vqmap.models.single_modal import *
 from vqmap.models.gpt import GPT
 from vqmap.comparisons.vae import get_vae
@@ -9,6 +10,16 @@ from vqmap.comparisons.denoising import DenoiseAutoencoder
 from vqmap.comparisons.forecast.classifer import ForecastNet
 
 __all__ = ['get_model']
+
+
+def initialize_model(config):
+    model_name = config.name
+    model_cls = globals().get(model_name, None)
+    assert model_cls, f"The specified model {model_name} was not found."
+    
+    model = model_cls(config)
+    
+    return model
 
 
 def get_model(config):
