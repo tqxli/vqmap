@@ -9,7 +9,7 @@ import json
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from vqmap.models import get_model, initialize_model
+from vqmap.models import initialize_model
 from vqmap.optimizers import get_optimizer, get_lr_scheduler
 
 from vqmap.utils.serialize import torch_safe_load

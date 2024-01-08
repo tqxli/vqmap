@@ -450,6 +450,10 @@ class PoseProfile:
             logger.info(f'     Chain: {[self.joint_names[idx] for idx in chain]}')
         logger.info(f"Align direction to +x: {self.joint_names[self.anterior]}-{self.joint_names[self.posterior]}")
 
+        # visualization
+        self.colors = info.get("colors", None)
+        self.colormap = info.get("colormap", "RdYlGn")
+
     def align_pose(self, poses, align_z=False):
         ndim = poses.shape[-1]
         poses = poses[:, self.indices_reorder, :]
@@ -513,6 +517,27 @@ class PoseProfile:
                 R = qmul_np(R, R_loc)
 
         return quat_params
+    
+    def convert_to_euclidean(self, inputs):
+        n_samples, seqlen, _ = inputs.shape
+        inputs = inputs.reshape(n_samples*seqlen, self.num_keypoint, -1)
+        n_chan = inputs.shape[-1]
+
+        # quaternion
+        if n_chan == 4:
+            inputs = self.forward_kinematics_np(
+                inputs, 
+                np.zeros((inputs.shape[0], 3)), do_root_R=True
+            )
+        # continuous 6D rotation
+        elif n_chan == 6:
+            inputs = self.forward_kinematics_cont6d_np(
+                inputs, 
+                np.zeros((inputs.shape[0], 3)), do_root_R=True
+            )
+        # otherwise keep xyz
+        inputs = inputs.reshape((n_samples, seqlen, self.num_keypoint, -1))
+        return inputs
     
 
 if __name__ == "__main__":

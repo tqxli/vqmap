@@ -76,19 +76,19 @@ class TrainerEngine(EngineBase):
     @torch.no_grad()
     def retrieve_vq(self, dataloader):
         self.model.eval()
-        vq_results = []
-        prequant = []
+        prequant, tokens = [], []
         for batch in tqdm.tqdm(dataloader):
             batch = self._data_to_device(batch)
-            z_q, emb_loss, info, z = self.model.encode(batch)
-            if hasattr(self.model, "quantizer"):
-                info = [i.detach().cpu().numpy() for i in info]
-            vq_results.append(info)
+            z_q, z_info, z = self.model.encode(batch)
+            token = z_info[-1][-1].detach().cpu().numpy()
+            tokens.append(token)
             z = z.detach().cpu().permute(0, 2, 1)
             prequant.append(z.reshape(-1, z.shape[-1]).numpy())
 
+        tokens = np.concatenate(tokens, axis=0)
         prequant = np.concatenate(prequant, axis=0)
-        return vq_results, prequant
+        
+        return tokens, prequant
 
     @torch.no_grad()
     def retrieve_latents(self, dataloader, augment=None):

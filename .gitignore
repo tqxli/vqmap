@@ -1,5 +1,6 @@
 configs/*
 experiments/*
+VQMAP.egg-info/*
 vqmap/__pycache__
 vqmap/datasets/__pycache__
 vqmap/models/__pycache__

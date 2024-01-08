@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
+from loguru import logger
 from vqmap.trainer.base import EngineBase
 from vqmap.utils.serialize import flatten_dict
 
@@ -76,7 +77,7 @@ class TrainerEngineGPT(EngineBase):
         train_losses /= total_num_samples
         train_acc = right_num / total_num
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
-        self.logger.log(
+        logger.info(
             f"Epoch: {cur_epoch} {losses_str}"
             + f" | Accuracy {100*train_acc}%"
         )
@@ -132,7 +133,7 @@ class TrainerEngineGPT(EngineBase):
         valid_losses /= total_num_samples
         valid_acc = right_num / total_num
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, valid_losses))
-        self.logger.log(
+        logger.info(
             f"Epoch: {cur_epoch} Valid loss {losses_str}"
             + f" | Accuracy {100*valid_acc}%"
         )
@@ -156,11 +157,11 @@ class TrainerEngineGPT(EngineBase):
 
         prefix = 'train__'
         eval_prefix = ''
-        self.logger.log('start train')
+        logger.info('start train')
 
         self.model_to_device()
         if self.config.train.get('use_fp16'):
-            self.logger.log('Train with half precision')
+            logger.info('Train with half precision')
             self.to_half()
 
         best_score = 0
@@ -184,5 +185,5 @@ class TrainerEngineGPT(EngineBase):
             elasped = datetime.datetime.now() - dt
             expected_total = elasped / (cur_epoch + 1) * n_epochs
             expected_remain = expected_total - elasped
-            self.logger.log('expected remain {}'.format(expected_remain))
-        self.logger.log('finish train, takes {}'.format(datetime.datetime.now() - dt))
+            logger.info('expected remain {}'.format(expected_remain))
+        logger.info('finish train, takes {}'.format(datetime.datetime.now() - dt))
