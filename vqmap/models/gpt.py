@@ -365,19 +365,11 @@ class GPT(nn.Module):
     
 
 if __name__ == "__main__":
-    import munch
-    t = 256
-    config = {
-        "vocab_size": 1024,
-        "block_size": 512,
-        "n_layer": 8,
-        "n_head": 4,
-        "n_embd": 512,
-        "dropout": 0.0,
-        "bias": True
-    }
+    # load example config file
+    from omegaconf import OmegaConf
+    config = OmegaConf.load('configs/model_gpt.yaml').model
     
-    config = munch.munchify(config)
+    t = 256
     
     model = GPT(config)
     
@@ -385,8 +377,10 @@ if __name__ == "__main__":
     idx = torch.randint(0, config.vocab_size, size=(b, t))
     target = torch.randint(0, config.vocab_size, size=(b, t))
     
-    logits, loss = model(idx, target)
+    logits, loss, attns = model(idx, target)
     print(logits.shape)
     print(f"Loss: {loss}")
+    
+    
     
     

@@ -169,11 +169,21 @@ class SequentialVAE(nn.Module):
         return sum(total_loss)
 
     def forward(self, batch):
+        z, z_info, latent = self.encode(batch)
+        out = self.decode(z)
+        return out, *self.compute_loss(batch, out, z_info)
+    
+    def encode(self, batch):
         latent = self.encoder(batch['motion'])
         z, z_info = self._bottleneck(latent)
-        out = self.decoder(z)
-        return out, *self.compute_loss(batch, out, z_info)
+        return z, z_info, latent
 
+    def decode(self, z):
+        return self.decoder(z)
+    
+    def decode_latent(self, idx):
+        z = self.quantizer.codebook[idx].unsqueeze(0).unsqueeze(-1)
+        return self.decode(z)
 
 class MultiBranchSeqVAE(SequentialVAE):
     def __init__(self, cfg):
@@ -218,15 +228,17 @@ class MultiBranchSeqVAE(SequentialVAE):
             for latent, decoder in zip(outs, self.decoders_post)
         ]
         return outs   
-
-    def forward(self, batches):
+    
+    def encode(self, batches):
         inputs = self.encode_proc(batches)
         latent = self.encoder(inputs)
         z, z_info = self._bottleneck(latent)
+        return z, z_info, latent
+    
+    def decode(self, z):
         outs = self.decoder(z)
         outs = self.decode_post(outs)
-
-        return outs, *self.compute_loss(batches, outs, z_info)
+        return outs
     
     def compute_loss(self, batches, outs, zinfo):
         if not self.multi_branches:
@@ -288,7 +300,8 @@ class HierarchicalSeqVAE(MultiBranchSeqVAE):
         
         self._initialize_multi_branches()
 
-    def encode(self, inputs):
+    def encode(self, batch):
+        inputs = self.encode_proc(batch)
         enc_0 = self.encoder_layer0(inputs)
         enc_1 = self.encoder_layer1(enc_0.permute(0, 2, 1))
 
@@ -302,14 +315,19 @@ class HierarchicalSeqVAE(MultiBranchSeqVAE):
         upsample_1 = self.upsample(quant_1)
         quant = torch.cat([upsample_1, quant_0], 1)
         dec = self.decoder_layer0(quant)
-        
+        dec = self.decode_post(dec)
+        return dec
+
+    def decode_latent(self, code_1_idx, code_0_idx):
+        quant_t = self.quantizer1.codebook[code_1_idx].unsqueeze(0).unsqueeze(-1)
+        quant_b = self.quantizer0.codebook[code_0_idx].unsqueeze(0).unsqueeze(-1).repeat(1, 1, 2**self.down_ts[1])
+        dec = self.decode(quant_t, quant_b)
+
         return dec
 
     def forward(self, batch):
-        inputs = self.encode_proc(batch)
-        quant_1, quant_0, zinfo = self.encode(inputs)
+        quant_1, quant_0, zinfo = self.encode(batch)
         outs = self.decode(quant_1, quant_0)
-        outs = self.decode_post(outs)
         
         return outs, *self.compute_loss(batch, outs, zinfo)
 
