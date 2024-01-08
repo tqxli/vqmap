@@ -8,7 +8,6 @@ from vqmap.trainer import initialize_trainer
 from vqmap.datasets import initialize_dataset, collate_fn_mocap
 from vqmap.utils.visualize import visualize, visualize_latent_space
 from vqmap.utils.run import set_random_seed
-from tqdm import tqdm
 import matplotlib.pyplot as plt
 from vqmap.utils.skeleton import *
 
@@ -23,6 +22,7 @@ def main(
     expdir = os.path.dirname(ckpt_path)    
     ckpt = torch.load(ckpt_path)
     config = ckpt["config"]
+    config.checkpoint = ckpt_path
 
     set_random_seed(seed)
     logger.info(f"Set random seed to: {seed}\n")
@@ -38,7 +38,7 @@ def main(
     
     # specify inference mode
     modes = ["sample", "visualize", "code"]
-    assert mode in ["all", "sample", "visualize", "code"]
+    assert mode in modes or mode == "all"
     config_dataset = config.dataset
     dataloader = None
     if mode != "sample":
@@ -131,7 +131,7 @@ def _code(
     data = {
         'code': vq_results,
         'datapath': datapath,
-        'config': config
+        'config': config,
     }
     np.save(fname, data)
     

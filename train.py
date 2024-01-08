@@ -4,7 +4,7 @@ import fire
 from omegaconf import OmegaConf
 from loguru import logger
 
-from vqmap.trainer.trainer import TrainerEngine
+from vqmap.trainer import initialize_trainer
 from vqmap.utils.run import set_random_seed
 from vqmap.datasets import initialize_dataset
 
@@ -17,6 +17,7 @@ def main(config_path):
         os.makedirs(expdir)
         os.makedirs(os.path.join(expdir, 'tb'))
 
+    # specify logger (by loguru) path
     logger.add(
         os.path.join(expdir, f"stats_train.log"),
         format="{time:YYYY-MM-DD HH:mm} | {level} | {message}"
@@ -35,7 +36,7 @@ def main(config_path):
     dataloaders = initialize_dataset(config.dataset)
 
     # initialize trainer & model
-    engine = TrainerEngine()
+    engine = initialize_trainer(config)
     engine.set_tb(tb_logger)
     engine.create(config)
     OmegaConf.save(config, os.path.join(config.expdir, 'parameters.yaml'))

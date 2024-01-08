@@ -302,4 +302,62 @@ def visualize2d(skeleton, to_plot, nframes, fname, titles):
     
     # plt.close(fig)
     
-    return anim 
+    return anim
+
+
+def plot_heatmap(data, savepath):
+    reset_rcparams()
+    fig, ax = plt.subplots(1, 1, figsize=(40*MM, 40*MM), dpi=200)
+    im = ax.imshow(data, cmap='Purples')
+    ax.spines[:].set_visible(False)
+    hide_axes_all(ax)
+    ax.set_xticks([])
+    ax.set_yticks([])
+
+    # Create colorbar
+    cbar = ax.figure.colorbar(
+        im, ax=ax, fraction=0.03, pad=0.05, 
+    )
+    cbar.outline.set_linewidth(0)
+    cbar.ax.tick_params(which='major', length=0, )
+
+    fig.savefig(savepath)
+
+
+def reset_rcparams():
+    matplotlib.rcdefaults()
+    matplotlib.rcParams['font.family'] = "Arial"
+    plt.rcParams['xtick.direction'] = 'out'
+    plt.rcParams['ytick.direction'] = 'out'
+    plt.rcParams['axes.linewidth'] = 0.8
+    plt.rcParams['lines.linewidth'] = 0.8
+    plt.rcParams['axes.labelpad'] = 2
+
+    major = 2
+    majorpad = 2
+    plt.rcParams['xtick.major.size'] = major
+    plt.rcParams['ytick.major.size'] = major
+    plt.rcParams['xtick.major.width'] = 0.4
+    plt.rcParams['ytick.major.width'] = 0.4
+    plt.rcParams['xtick.major.pad'] = majorpad
+    plt.rcParams['ytick.major.pad'] = majorpad
+    plt.rcParams['xtick.labelsize'] = 5
+    plt.rcParams['ytick.labelsize'] = 5
+    plt.rcParams['axes.labelsize'] = 5
+
+    plt.rcParams["legend.borderpad"] = 0
+    plt.rcParams["legend.framealpha"] = 0
+    plt.rcParams["legend.fontsize"] = 5
+
+def hide_axes_top_right(ax):
+    ax.spines.right.set_visible(False)
+    ax.spines.top.set_visible(False)
+
+def hide_axes_all(ax):
+    ax.spines.right.set_visible(False)
+    ax.spines.top.set_visible(False)
+    ax.spines.left.set_visible(False)
+    ax.spines.bottom.set_visible(False)
+
+# every dimension is in millimeter
+MM = 1/25.4
