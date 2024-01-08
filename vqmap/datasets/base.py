@@ -4,7 +4,7 @@ import numpy as np
 import random
 import scipy.io as sio
 from vqmap.utils.quaternion import *
-from vqmap.utils.skeleton import skeleton_initialize, skeleton_initialize_v2
+from vqmap.utils.skeleton import skeleton_initialize_v2
 from tqdm import tqdm
 from loguru import logger
 

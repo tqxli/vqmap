@@ -1,17 +1,20 @@
+import torch
 from torch.utils.data import DataLoader, Subset
 import os
+import numpy as np
 from loguru import logger
-from vqmap.datasets.base import *
-from vqmap.datasets.mocap2d import *
-from vqmap.datasets.mocap3d import *
+from vqmap.datasets.base import MocapChunkBase, MocapContBase
+from vqmap.datasets.mocap2d import MocapCont2D, MoSeqDLC2D
+from vqmap.datasets.mocap3d import UESTC
+from vqmap.datasets.motion_token import MotionTokenDataset
 
 __all__ = ['initialize_dataset']
-
 
 def retrieve_datapaths(cfg):
     if os.path.isfile(cfg.root):
         return cfg.root, None
     return globals().get(f'_retrieve_dannce_{cfg.split.mocap_type}')(cfg.root)
+
 
 def _retrieve_dannce_lone(root):
     candidates = sorted([p for p in os.listdir(root) if p[0].isdigit()])
@@ -21,6 +24,7 @@ def _retrieve_dannce_lone(root):
     ]
     datapaths = [dp for dp in datapaths if os.path.exists(dp)]
     return datapaths, candidates
+
 
 def _retrieve_dannce_soc(root):
     candidates = sorted([p for p in os.listdir(root) if p[0].isdigit()])
@@ -35,15 +39,27 @@ def _retrieve_dannce_soc(root):
         datapaths += [rat1_path, rat2_path]
     return datapaths, candidates
 
+
+def _retrieve_dannce_token(root):
+    candidates = sorted([p for p in os.listdir(root) if p[0].isdigit()])
+    datapaths = [
+        os.path.join(root, dp, 'vq_inference.npy')
+        for dp in candidates
+    ]
+    datapaths = [dp for dp in datapaths if os.path.exists(dp)]
+    return datapaths, candidates
+
+
 def _initialize_dataset(cfg, split='train'):
     dataset_name = cfg.name
+    cfg.train = (split == 'train')
     dataset_cls = globals().get(dataset_name, None)
     assert dataset_cls, f"The specified dataset class {dataset_name} was not found."
     
     datapaths, candidates = retrieve_datapaths(cfg)
     
-    datapaths = datapaths[:12]
-    candidates = candidates[:12]
+    # datapaths = datapaths[:12]
+    # candidates = candidates[:12]
     
     # split dataset into train and valid:
     # if by subjects/groups, split at datapaths
@@ -71,12 +87,17 @@ def _initialize_dataset(cfg, split='train'):
         
         dataset = Subset(dataset, indices[:cutoff])
     
+    do_shuffle = (split == 'train')
+    logger.info(f'Shuffle data: {do_shuffle}')
+    
     # initialize dataloader
     return get_dataloader(
         dataset, cfg.dataloader,
         batch_size=cfg.dataloader.batch_size if split == 'train' else cfg.dataloader.eval_batch_size,
-        shuffle=(split == 'train')
+        shuffle=(split == 'train'),
+        collate_fn=collate_fn_mocap if 'token' not in cfg.split.mocap_type else None
     )
+
 
 def collate_fn_mocap(samples):
     motion, actions = [], []
@@ -96,16 +117,18 @@ def collate_fn_mocap(samples):
     }
     return batch
 
-def get_dataloader(dataset, cfg, batch_size, shuffle=True):
+
+def get_dataloader(dataset, cfg, batch_size, shuffle=True, collate_fn=None):
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=cfg.num_workers,
         pin_memory=cfg.get('pin_memory', True),
-        collate_fn=collate_fn_mocap
+        collate_fn=collate_fn
     )
     return dataloader
+
 
 def initialize_dataset(cfg, splits=['train', 'val']):
     dataloaders = {}
@@ -114,6 +137,7 @@ def initialize_dataset(cfg, splits=['train', 'val']):
     infostr = ':'.join([f'{split} {dataloaders[split].dataset.__len__()}' for split in splits])
     logger.info(infostr)
     return dataloaders
+
 
 if __name__ == '__main__':
     from omegaconf import OmegaConf

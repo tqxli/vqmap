@@ -5,7 +5,7 @@ Summary: Vector Quantized Representations for Efficient Hierarchical Delineation
 Author: 
 Author-email: tianqing.li@duke.edu
 Requires-Python: >=3.8
-Requires-Dist: torch
+Requires-Dist: torch>=1.11
 Requires-Dist: numpy
 Requires-Dist: tqdm
 Requires-Dist: matplotlib
