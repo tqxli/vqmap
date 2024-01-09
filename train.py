@@ -3,14 +3,19 @@ from torch.utils.tensorboard import SummaryWriter
 import fire
 from omegaconf import OmegaConf
 from loguru import logger
-
 from vqmap.trainer import initialize_trainer
 from vqmap.utils.run import set_random_seed
+from vqmap.utils.config import parse_config
 from vqmap.datasets import initialize_dataset
 
+
 def main(config_path):
-    config = OmegaConf.load(config_path)
-    
+    # parse config
+    config_base = OmegaConf.load(config_path)
+    config = parse_config(config_base)
+    config_cli_override = OmegaConf.from_cli()
+    config = OmegaConf.merge(config, config_cli_override)
+
     # create exp directory
     expdir = config.expdir
     if not os.path.exists(expdir):
@@ -33,7 +38,7 @@ def main(config_path):
         logger.info(f"Set random seed to: {seed}\n")
     
     # initialize dataset & dataloaders
-    dataloaders = initialize_dataset(config.dataset)
+    dataloaders = initialize_dataset(config)
 
     # initialize trainer & model
     engine = initialize_trainer(config)
