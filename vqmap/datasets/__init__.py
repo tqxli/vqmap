@@ -2,17 +2,21 @@ import torch
 from torch.utils.data import DataLoader, Subset
 import os
 import numpy as np
+from copy import deepcopy
 from loguru import logger
+from omegaconf import OmegaConf
 from vqmap.datasets.base import MocapChunkBase, MocapContBase
 from vqmap.datasets.mocap2d import MocapCont2D, MoSeqDLC2D
 from vqmap.datasets.mocap3d import UESTC
 from vqmap.datasets.motion_token import MotionTokenDataset
 
+
 __all__ = ['initialize_dataset']
+
 
 def retrieve_datapaths(cfg):
     if os.path.isfile(cfg.root):
-        return cfg.root, None
+        return cfg.root, []
     return globals().get(f'_retrieve_dannce_{cfg.split.mocap_type}')(cfg.root)
 
 
@@ -51,25 +55,27 @@ def _retrieve_dannce_token(root):
 
 
 def _initialize_dataset(cfg, split='train'):
-    dataset_name = cfg.name
-    cfg.train = (split == 'train')
+    cfg_dataset = cfg.dataset
+    dataset_name = cfg_dataset.name
+    cfg_dataset.train = (split == 'train')
     dataset_cls = globals().get(dataset_name, None)
     assert dataset_cls, f"The specified dataset class {dataset_name} was not found."
     
-    datapaths, candidates = retrieve_datapaths(cfg)
+    datapaths, candidates = retrieve_datapaths(cfg_dataset)
     
-    # datapaths = datapaths[:12]
-    # candidates = candidates[:12]
+    if isinstance(datapaths, list):
+        datapaths = datapaths[:12]
+        candidates = candidates[:12]
     
     # split dataset into train and valid:
     # if by subjects/groups, split at datapaths
     # if by fraction, split after dataset is initialized (torch subset)
-    split_method = cfg.split.method
+    split_method = cfg_dataset.split.method
     assert split_method in ['fraction', 'subject']
     logger.info(f'Split dataset by {split_method}')
     
     if (split_method == 'subject') and (isinstance(datapaths, list)) and (split != 'inference'):
-        split_ids = cfg.split.get(f'split_ids_{split}')
+        split_ids = cfg_dataset.split.get(f'split_ids_{split}')
         indices = []
         for id in split_ids:
             indices += [i for i, cand in enumerate(candidates) if id in cand]
@@ -77,10 +83,10 @@ def _initialize_dataset(cfg, split='train'):
         datapaths = [datapaths[idx] for idx in indices]
 
     # initialize dataset
-    dataset = dataset_cls(datapaths, cfg)
+    dataset = dataset_cls(datapaths, cfg_dataset)
     
     if (split_method == 'fraction') and (split != 'inference'):
-        train_frac = cfg.split.frac
+        train_frac = cfg_dataset.split.frac
         cutoff = int(train_frac * len(dataset))
         indices = np.random.permutation(len(dataset))
         indices = indices[:cutoff] if split == 'train' else indices[cutoff:]
@@ -89,13 +95,13 @@ def _initialize_dataset(cfg, split='train'):
     
     do_shuffle = (split == 'train')
     logger.info(f'Shuffle data: {do_shuffle}')
-    
+
     # initialize dataloader
     return get_dataloader(
         dataset, cfg.dataloader,
         batch_size=cfg.dataloader.batch_size if split == 'train' else cfg.dataloader.eval_batch_size,
         shuffle=(split == 'train'),
-        collate_fn=collate_fn_mocap if 'token' not in cfg.split.mocap_type else None
+        collate_fn=collate_fn_mocap if 'token' not in cfg_dataset.split.mocap_type else None
     )
 
 
@@ -125,18 +131,38 @@ def get_dataloader(dataset, cfg, batch_size, shuffle=True, collate_fn=None):
         shuffle=shuffle,
         num_workers=cfg.num_workers,
         pin_memory=cfg.get('pin_memory', True),
-        collate_fn=collate_fn
+        collate_fn=collate_fn,
+        drop_last=True
     )
     return dataloader
 
 
-def initialize_dataset(cfg, splits=['train', 'val']):
+def initialize_dataset_single(cfg, splits):    
     dataloaders = {}
     for split in splits:
         dataloaders[split] = _initialize_dataset(cfg, split=split)
     infostr = ':'.join([f'{split} {dataloaders[split].dataset.__len__()}' for split in splits])
     logger.info(infostr)
     return dataloaders
+
+
+def initialize_dataset_multi(cfg, splits):
+
+    dataloaders = []
+    for cfg_dataset in cfg.dataset:
+        cfg_new = deepcopy(cfg)
+        cfg_new.update(cfg_dataset)
+        loaders = initialize_dataset_single(cfg_new, splits)
+        dataloaders.append(loaders)
+    
+    dataloaders = {k: [loaders[k] for loaders in dataloaders] for k in dataloaders[0]}
+    return dataloaders
+
+
+def initialize_dataset(cfg, splits=['train', 'val']):
+    if OmegaConf.is_list(cfg.dataset):
+        return initialize_dataset_multi(cfg, splits)
+    return initialize_dataset_single(cfg, splits)
 
 
 if __name__ == '__main__':

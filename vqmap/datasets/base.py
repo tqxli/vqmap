@@ -4,7 +4,7 @@ import numpy as np
 import random
 import scipy.io as sio
 from vqmap.utils.quaternion import *
-from vqmap.utils.skeleton import skeleton_initialize_v2
+from vqmap.utils.skeleton import skeleton_initialize
 from tqdm import tqdm
 from loguru import logger
 
@@ -24,7 +24,7 @@ class MocapContBase(Dataset):
         # data representations
         self.data_rep = cfg.get('data_rep', 'xyz')
         assert self.data_rep in ['xyz', 'quat', 'cont6d']
-        self.pose_profile = skeleton_initialize_v2(cfg.skeleton)
+        self.pose_profile = skeleton_initialize(cfg.skeleton)
         self.stride = cfg.stride
         self.downsample = cfg.downsample
         self.scale = cfg.scale
@@ -130,6 +130,8 @@ class MocapChunkBase(Dataset):
         self.sampling_step = cfg.sampling_step
         
         self.data_rep = cfg.data_rep
+        # self.pose_profile = skeleton_initialize(cfg.skeleton)
+        self.scale = cfg.scale
         self._load_data()
     
     def _load_data(self):
@@ -143,7 +145,7 @@ class MocapChunkBase(Dataset):
             poseseq -= poseseq[:, :1]
             poseseq = np.stack([-poseseq[:, :, 1], poseseq[:, :, 0], poseseq[:, :, 2]], axis=-1)
             
-            poseseq = poseseq.reshape((poseseq.shape[0], -1)) * 8
+            poseseq = poseseq.reshape((poseseq.shape[0], -1)) * self.scale
             self.pose3d.append(poseseq)
             self._num_frames.append(poseseq.shape[0])
 
