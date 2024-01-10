@@ -4,22 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import tqdm
-from loguru import logger
-from vqmap.trainer.base import EngineBase
-from vqmap.utils.serialize import flatten_dict
-
-
-def cur_step(cur_epoch, idx, N, fmt=None):
-    _cur_step = cur_epoch + idx / N
-    if fmt:
-        return fmt.format(_cur_step)
-    else:
-        return _cur_step
-
-
-def get_lr(optimizer):
-    for param_group in optimizer.param_groups:
-        return param_group['lr']
+from vqmap.trainer.base import *
     
 
 class TrainerEngineGPT(EngineBase):
@@ -142,48 +127,3 @@ class TrainerEngineGPT(EngineBase):
         self.tb_logger.add_scalar(f"val/Accuracy", valid_acc, cur_epoch)
         
         return valid_losses[0]
-
-    def train(self, tr_loader, n_epochs,
-              val_loaders=None,
-              val_epochs=1,
-              model_save_to='last.pth',
-              best_model_save_to='best.pth'):
-
-        if val_loaders and 'val' not in val_loaders:
-            raise KeyError('val_loaders should contain key "val", '
-                           'but ({})'.format(val_loaders.keys()))
-
-        dt = datetime.datetime.now()
-
-        prefix = 'train__'
-        eval_prefix = ''
-        logger.info('start train')
-
-        self.model_to_device()
-        if self.config.train.get('use_fp16'):
-            logger.info('Train with half precision')
-            self.to_half()
-
-        best_score = 0
-        for cur_epoch in range(n_epochs):
-            self._train_epoch(tr_loader, cur_epoch, prefix=prefix)
-
-            metadata = self.metadata.copy()
-            metadata['cur_epoch'] = cur_epoch + 1
-            metadata['lr'] = get_lr(self.optimizer)
-
-            if val_loaders is not None and (cur_epoch + 1) % val_epochs == 0:
-                scores = self.evaluate(val_loaders['val'], cur_epoch)
-
-            if self.config.lr_scheduler.name == 'reduce_lr_on_plateau':
-                self.lr_scheduler.step(scores)
-            else:
-                self.lr_scheduler.step()
-
-            self.save_models(model_save_to, metadata)
-
-            elasped = datetime.datetime.now() - dt
-            expected_total = elasped / (cur_epoch + 1) * n_epochs
-            expected_remain = expected_total - elasped
-            logger.info('expected remain {}'.format(expected_remain))
-        logger.info('finish train, takes {}'.format(datetime.datetime.now() - dt))
