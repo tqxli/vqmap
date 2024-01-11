@@ -7,7 +7,7 @@ from loguru import logger
 from omegaconf import OmegaConf
 from vqmap.datasets.base import MocapChunkBase, MocapContBase
 from vqmap.datasets.mocap2d import MocapCont2D, MoSeqDLC2D
-from vqmap.datasets.mocap3d import UESTC
+from vqmap.datasets.mocap3d import *
 from vqmap.datasets.motion_token import MotionTokenDataset
 
 
@@ -71,8 +71,6 @@ def _initialize_dataset(cfg, split='train'):
     # if by subjects/groups, split at datapaths
     # if by fraction, split after dataset is initialized (torch subset)
     split_method = cfg_dataset.split.method
-    assert split_method in ['fraction', 'subject']
-    logger.info(f'Split dataset by {split_method}')
     
     if (split_method == 'subject') and (isinstance(datapaths, list)) and (split != 'inference'):
         split_ids = cfg_dataset.split.get(f'split_ids_{split}')
@@ -88,11 +86,16 @@ def _initialize_dataset(cfg, split='train'):
     if (split_method == 'fraction') and (split != 'inference'):
         train_frac = cfg_dataset.split.frac
         cutoff = int(train_frac * len(dataset))
+        np.random.seed(cfg.seed)
         indices = np.random.permutation(len(dataset))
-        indices = indices[:cutoff] if split == 'train' else indices[cutoff:]
-        
-        dataset = Subset(dataset, indices[:cutoff])
-    
+        indices = {
+            'train': indices[:cutoff],
+            'val':  indices[cutoff:]
+        }
+        dataset = {k:Subset(dataset, ind) for k, ind in indices.items()}
+    else:
+        dataset = {split:dataset}
+
     do_shuffle = (split == 'train')
     logger.info(f'Shuffle data: {do_shuffle}')
 
@@ -124,30 +127,33 @@ def collate_fn_mocap(samples):
     return batch
 
 
-def get_dataloader(dataset, cfg, batch_size, shuffle=True, collate_fn=None):
-    dataloader = DataLoader(
-        dataset,
-        batch_size=batch_size,
-        shuffle=shuffle,
-        num_workers=cfg.num_workers,
-        pin_memory=cfg.get('pin_memory', True),
-        collate_fn=collate_fn,
-        drop_last=True
-    )
-    return dataloader
+def get_dataloader(datasets, cfg, batch_size, shuffle=True, collate_fn=None, drop_last=False):
+    dataloaders = {}
+    for split, dataset in datasets.items():
+        dataloaders[split] = DataLoader(
+            dataset,
+            batch_size=batch_size,
+            shuffle=shuffle,
+            num_workers=cfg.num_workers,
+            pin_memory=cfg.get('pin_memory', True),
+            collate_fn=collate_fn,
+            drop_last=drop_last
+        )
+
+    return dataloaders
 
 
 def initialize_dataset_single(cfg, splits):    
     dataloaders = {}
     for split in splits:
-        dataloaders[split] = _initialize_dataset(cfg, split=split)
-    infostr = ':'.join([f'{split} {dataloaders[split].dataset.__len__()}' for split in splits])
-    logger.info(infostr)
+        dataloaders_split = _initialize_dataset(cfg, split=split)
+        dataloaders.update(dataloaders_split)
+    infostr = ':'.join([f'{split} {dataloaders[split].dataset.__len__()}' for split in dataloaders])
+    logger.info(f"Dataset splits: {infostr}")
     return dataloaders
 
 
 def initialize_dataset_multi(cfg, splits):
-
     dataloaders = []
     for cfg_dataset in cfg.dataset:
         cfg_new = deepcopy(cfg)
@@ -160,6 +166,13 @@ def initialize_dataset_multi(cfg, splits):
 
 
 def initialize_dataset(cfg, splits=['train', 'val']):
+    split_method = cfg.dataset.split.method
+    assert split_method in ['fraction', 'subject']
+    logger.info(f'Split dataset by {split_method}')
+    
+    if (split_method == 'fraction') and (splits != ['inference']):
+        splits = ['train']
+    
     if OmegaConf.is_list(cfg.dataset):
         return initialize_dataset_multi(cfg, splits)
     return initialize_dataset_single(cfg, splits)
