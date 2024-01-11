@@ -185,6 +185,7 @@ class SequentialVAE(nn.Module):
         z = self.quantizer.codebook[idx].unsqueeze(0).unsqueeze(-1)
         return self.decode(z)
 
+
 class MultiBranchSeqVAE(SequentialVAE):
     def __init__(self, cfg):
         super().__init__(cfg)
@@ -278,7 +279,7 @@ class HierarchicalSeqVAE(MultiBranchSeqVAE):
             latent_dim[1], latent_dim[1], width=self.cfg.decoder.width, down_t=down_ts[1],
         )
         self.decoder_layer0 = decoders.Conv1DDecoder(
-            input_nfeats, latent_dim[0]*2, width=self.cfg.decoder.width, down_t=down_ts[0],
+            input_nfeats, latent_dim[0]+latent_dim[1], width=self.cfg.decoder.width, down_t=down_ts[0],
         )
         
         upsample = []
@@ -308,7 +309,7 @@ class HierarchicalSeqVAE(MultiBranchSeqVAE):
         quant_1, emb_1, info_1 = self.quantizer1(enc_1)
         quant_0, emb_0, info_0 = self.quantizer0(enc_0)
         
-        return quant_1, quant_0, (emb_1+emb_0, info_1, info_0)
+        return (quant_1, quant_0), (emb_1+emb_0, info_1, info_0), (enc_1, enc_0)
 
     def decode(self, quant_1, quant_0):
         # upsample the top latent map
@@ -326,7 +327,7 @@ class HierarchicalSeqVAE(MultiBranchSeqVAE):
         return dec
 
     def forward(self, batch):
-        quant_1, quant_0, zinfo = self.encode(batch)
+        (quant_1, quant_0), zinfo, _ = self.encode(batch)
         outs = self.decode(quant_1, quant_0)
         
         return outs, *self.compute_loss(batch, outs, zinfo)

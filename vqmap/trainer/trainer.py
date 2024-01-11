@@ -36,13 +36,21 @@ class TrainerEngine(EngineBase):
         for batch in tqdm.tqdm(dataloader):
             batch = self._data_to_device(batch)
             z_q, z_info, z = self.model.encode(batch)
-            token = z_info[-1][-1].detach().cpu().numpy()
+            
+            if len(z_info) != 2:
+                token1 = z_info[1][-1]
+                token0 = z_info[2][-1]
+                token = torch.stack([token1, token0], axis=-1) #[N, 2]
+            else:
+                token = z_info[-1][-1]
+            
+            token = token.detach().cpu().numpy()
             tokens.append(token)
-            z = z.detach().cpu().permute(0, 2, 1)
-            prequant.append(z.reshape(-1, z.shape[-1]).numpy())
+            # z = z.detach().cpu().permute(0, 2, 1)
+            # prequant.append(z.reshape(-1, z.shape[-1]).numpy())
 
         tokens = np.concatenate(tokens, axis=0)
-        prequant = np.concatenate(prequant, axis=0)
+        # prequant = np.concatenate(prequant, axis=0)
         
         return tokens, prequant
 
@@ -114,6 +122,6 @@ class TrainerEngine(EngineBase):
         loss_names = list(loss_dict.keys())
         train_losses /= total_num_samples
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
-        logger.info(f"Epoch: {cur_epoch} Total Loss: {tot_losses/total_num_samples} | {losses_str}")
+        logger.info(f"Epoch[{cur_epoch}/{self.n_epochs}] Total Loss: {tot_losses/total_num_samples} | {losses_str}")
         for name, loss in zip(loss_names, train_losses):
             self.tb_logger.add_scalar(f'train/{name}', loss, cur_epoch)
