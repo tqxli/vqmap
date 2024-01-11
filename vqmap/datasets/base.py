@@ -16,6 +16,8 @@ class MocapContBase(Dataset):
         self, datapath, cfg
     ):
         super().__init__()
+       
+        self.cfg = cfg
         
         self.datapath = datapath
         self.seqlen = seqlen = cfg.seqlen
@@ -29,6 +31,8 @@ class MocapContBase(Dataset):
         self.downsample = cfg.downsample
         self.scale = cfg.scale
         self.normalize = cfg.normalize
+        
+        self.center_only = cfg.get('center_only', False)
 
         self._load_data()
     
@@ -38,7 +42,7 @@ class MocapContBase(Dataset):
         self.pose3d, self.num_frames = [], []
         self.raw_num_frames = 0
 
-        for dp in self.datapath:
+        for dp in tqdm(self.datapath, desc='Preprocess'):
             data = self._load(dp)
             data = data[::self.downsample] * self.scale
             data = self._trim(data)
@@ -109,8 +113,10 @@ class MocapContBase(Dataset):
 
     def _align(self, joints3D):
         aligned = np.zeros_like(joints3D)
-        for i, seq in enumerate(tqdm(joints3D.reshape(-1, self.seqlen, *joints3D.shape[1:]), desc="Alignment")):
-            aligned[i*self.seqlen:(i+1)*self.seqlen] = self.pose_profile.align_pose(seq)[0]
+        for i, seq in enumerate(joints3D.reshape(-1, self.seqlen, *joints3D.shape[1:])):
+            aligned[i*self.seqlen:(i+1)*self.seqlen] = self.pose_profile.align_pose(
+                seq, center_only=self.center_only
+            )[0]
 
         return aligned
 

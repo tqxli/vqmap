@@ -1,0 +1,37 @@
+name: pupdev
+num_keypoint: 16
+keypoint_names: 
+  - EarL
+  - EarR
+  - Snout
+  - SpineF
+  - SpineM
+  - TailBase
+  - TailMid
+  - TailEnd
+  - ForepawL
+  - ForelimbL
+  - ForepawR
+  - ForelimbR
+  - HindpawL
+  - HindlimbL
+  - HindpawR
+  - HindlimbR
+
+indices_reorder: [4, 3, 0, 1, 2, 5, 6, 7, 9, 8, 11, 10, 13, 12, 15, 14]
+
+kinematic_tree: 
+  - [0, 1, 2, 3, 4, 2]
+  - [0, 5, 6, 7]
+  - [1, 8, 9]
+  - [1, 10, 11]
+  - [0, 12, 13]
+  - [0, 14, 15]
+
+colors: ['orange', 'red', 'green', 'green', 'blue', 'blue']
+colormap: 'RdYlGn'
+
+anterior: 4
+posterior: 0
+
+fps: 120

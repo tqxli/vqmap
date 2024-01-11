@@ -88,11 +88,15 @@ class PoseProfile:
         self.colors = info.get("colors", None)
         self.colormap = info.get("colormap", "RdYlGn")
 
-    def align_pose(self, poses, align_z=False):
+    def align_pose(self, poses, center_only=False, align_z=False):
         ndim = poses.shape[-1]
         poses = poses[:, self.indices_reorder, :]
         traj = poses[:, :1]
         poses = poses - traj
+        
+        if center_only:
+            return poses, traj
+        
         spineline = poses[:, self.anterior] - poses[:, self.posterior]
         spineline = spineline[:, None, :]
         if not align_z and ndim == 3:
