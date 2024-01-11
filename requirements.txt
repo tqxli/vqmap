@@ -1,5 +1,6 @@
 loguru
 numpy
+omegaconf
 pandas
 pyyaml
 scipy
