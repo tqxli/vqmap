@@ -63,7 +63,7 @@ class TrainerEngineGPT(EngineBase):
         train_acc = right_num / total_num
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
         logger.info(
-            f"Epoch: {cur_epoch} {losses_str}"
+            f"Epoch[{cur_epoch}/{self.n_epochs}] {losses_str}"
             + f" | Accuracy {100*train_acc}%"
         )
         for name, loss in zip(loss_names, train_losses):

@@ -29,6 +29,7 @@ class EngineBase(object):
 
     def create(self, config, verbose=False):
         self.config = config
+        self.n_epochs = config.train.epochs
         self.set_model(initialize_model(config.model))
         logger.info('Total params: %.2fM' % (sum(p.numel() for p in self.model.parameters()) / 1000000.0))
 
