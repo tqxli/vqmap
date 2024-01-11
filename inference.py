@@ -34,15 +34,14 @@ def main(
     )
     
     # skeleton
-    skeleton = skeleton_initialize_v2()
+    skeleton = skeleton_initialize(config.dataset.skeleton)
     
     # specify inference mode
     modes = ["sample", "visualize", "code"]
     assert mode in modes or mode == "all"
-    config_dataset = config.dataset
     dataloader = None
     if mode != "sample":
-        dataloaders = initialize_dataset(config_dataset, splits=[split])
+        dataloaders = initialize_dataset(config, splits=[split])
         dataloader = dataloaders[split]
     
     # initialize trainer
@@ -125,9 +124,8 @@ def _code(
 ):
     logger.info("Running: VQ code extraction")
     vq_results, _ = engine.retrieve_vq(dataloader=dataloader)
-    dataroot = config.dataset.root.split('/')[-1]
+    fname = os.path.join(expdir, f'vq_code_{config.dataset.name}.npy')
     datapath = dataloader.dataset.datapath
-    fname = os.path.join(expdir, f'vq_code_{dataroot}.npy')
     data = {
         'code': vq_results,
         'datapath': datapath,
@@ -141,21 +139,16 @@ def _sample(
     expdir, seed, config,
 ):
     logger.info("Running: latent space decoding and visualization")
-    # workaround quantizer naming differences TODO
     try:
-        codebook = engine.model.state_dict()["quantizer.embeddings"]
+        num_codes = config.model.bottleneck.args.nb_code
     except:
-        codebook = engine.model.state_dict()["quantizer.codebook"]
-
-    codebook = codebook.clone().reshape(-1, codebook.shape[-1])
-    codebook = codebook.detach().cpu().numpy()
-
-    num_codes = config.model.bottleneck.args.nb_code
-    if isinstance(num_codes, list):
+        num_codes = config.model.bottleneck.num_codes
+    if OmegaConf.is_list(num_codes):
         num_codes_0, num_codes_1 = num_codes
-        for i in range(num_codes_1):
-            for j in range(num_codes_0):
-                dec = engine.model.decode_latent(i, j).detach().cpu().numpy()
+        out = []
+        for i in range(num_codes_0):
+            for j in range(num_codes_1):
+                dec = engine.model.decode_latent(j, i).detach().cpu().numpy()
                 out.append(dec)
         out_params = np.concatenate(out, 0)
     else:
@@ -167,7 +160,6 @@ def _sample(
     # save
     fname = os.path.join(expdir, f'vq_codebook.npy')
     data = {
-        "codebook": codebook,
         "decodes": out_params,
         "code_sequences": out,
     }
@@ -181,6 +173,7 @@ def _sample(
         skeleton,
         out,
         savepath,
+        w=num_codes[1]
     )
 
 if __name__ == "__main__":
