@@ -10,7 +10,7 @@ import tqdm
 
 
 def visualize_latent_space(
-    skeleton, to_plot, savepath, **kwargs
+    skeleton, to_plot, savepath, w=16, **kwargs
 ):
     num_codes = len(to_plot)
     for idx in tqdm.tqdm(range(num_codes)):
@@ -18,7 +18,7 @@ def visualize_latent_space(
     
     # load all images and merge
     full = []
-    w = 8
+    # w = 16
     h = int(np.ceil(num_codes / w))
     overlap = 15
     for row in range(h):
@@ -32,6 +32,7 @@ def visualize_latent_space(
 
     plt.imsave(os.path.dirname(savepath)+f'/vis_codebook.png', full)
     plt.close()
+
 
 def visualize_seq(
     skeleton, to_plot, idx, savepath,
@@ -111,6 +112,7 @@ def visualize(skeleton, to_plot, nframes, fname, titles):
     ndim = to_plot[0].shape[-1]
     visualize_fcn = visualize3d if ndim == 3 else visualize2d
     return visualize_fcn(skeleton, to_plot, nframes, fname, titles)
+
 
 def visualize3d(
     skeleton, to_plot, nframes, fname, titles,

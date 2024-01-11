@@ -5,8 +5,8 @@ from loguru import logger
 def parse_config(base_config):
     config = {}
     for name, cfg_path in base_config.items():
-        if name == 'expdir':
-            config['expdir'] = cfg_path
+        if name in ['expdir', 'seed']:
+            config[name] = cfg_path
             continue
         
         if name == 'dataset' and OmegaConf.is_list(cfg_path):
