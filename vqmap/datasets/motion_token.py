@@ -10,6 +10,7 @@ class MotionTokenDataset(MocapContBase):
         self.num_train_samples = cfg.get("num_train_samples", 20000)
     
     def _load_data(self):
+        # TODO: more flexible loading scheme
         data = np.load(self.datapath, allow_pickle=True)[()]
         datapaths = data["datapath"]
         self.num_exps = len(datapaths)

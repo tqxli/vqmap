@@ -64,7 +64,7 @@ class TrainerEngineGPT(EngineBase):
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
         logger.info(
             f"Epoch[{cur_epoch}/{self.n_epochs}] {losses_str}"
-            + f" | Accuracy {100*train_acc}%"
+            + " | Accuracy {:.4f}%".format(100*train_acc)
         )
         for name, loss in zip(loss_names, train_losses):
             self.tb_logger.add_scalar(f'train/{name}', loss, cur_epoch)
@@ -120,7 +120,7 @@ class TrainerEngineGPT(EngineBase):
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, valid_losses))
         logger.info(
             f"Epoch: {cur_epoch} Valid loss {losses_str}"
-            + f" | Accuracy {100*valid_acc}%"
+            + " | Accuracy {:.4f}%".format(100*valid_acc)
         )
         for name, loss in zip(loss_names, valid_losses):
             self.tb_logger.add_scalar(f'val/{name}', loss, cur_epoch)
