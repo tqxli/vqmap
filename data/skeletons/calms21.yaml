@@ -1,5 +1,6 @@
 name: calms21
 num_keypoint: 18
+ndim: 2
 keypoint_names: 
   - Nose
   - LeftEar

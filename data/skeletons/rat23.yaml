@@ -1,5 +1,6 @@
 name: rat23
 num_keypoint: 23
+ndim: 3
 keypoint_names: 
   - Snout
   - EarL

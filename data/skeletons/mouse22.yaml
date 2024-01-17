@@ -1,5 +1,6 @@
 name: mouse22
 num_keypoint: 20
+ndim: 3
 keypoint_names: 
   - EarL
   - EarR

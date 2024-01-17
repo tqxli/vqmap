@@ -1,5 +1,6 @@
 name: moseq_dlc2d
 num_keypoint: 8
+ndim: 2
 keypoint_names: 
   - spine4
   - spine3

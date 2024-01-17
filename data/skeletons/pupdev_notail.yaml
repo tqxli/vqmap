@@ -1,5 +1,6 @@
 name: pupdev
 num_keypoint: 13
+ndim: 3
 keypoint_names: 
   - EarL
   - EarR
