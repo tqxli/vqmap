@@ -122,6 +122,9 @@ class TrainerEngine(EngineBase):
         loss_names = list(loss_dict.keys())
         train_losses /= total_num_samples
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
-        logger.info(f"Epoch[{cur_epoch}/{self.n_epochs}] Total Loss: {tot_losses/total_num_samples} | {losses_str}")
+        logger.info(
+            f"Epoch[{cur_epoch}/{self.n_epochs}]"
+            + " Total Loss: {:.4f} | {}".format(tot_losses/total_num_samples, losses_str)
+        )
         for name, loss in zip(loss_names, train_losses):
             self.tb_logger.add_scalar(f'train/{name}', loss, cur_epoch)
