@@ -15,6 +15,7 @@ from vqmap.utils.skeleton import *
 def main(
     ckpt_path, mode, seed=1024, split='inference',
     n_samples=4,
+    dataset=None,
 ):
     assert os.path.exists(ckpt_path), f"{ckpt_path} does exist"
     
@@ -23,6 +24,12 @@ def main(
     ckpt = torch.load(ckpt_path)
     config = ckpt["config"]
     config.checkpoint = ckpt_path
+    
+    # inference with other datasets
+    if dataset is not None:
+        logger.debug(f"Overwrite dataset configuration: {dataset}")
+        config_dataset = OmegaConf.load(dataset)
+        config.dataset = config_dataset.dataset
 
     set_random_seed(seed)
     logger.info(f"Set random seed to: {seed}\n")
@@ -108,7 +115,7 @@ def _visualize(
         out[i] = skeleton.convert_to_euclidean(o)
     ref = skeleton.convert_to_euclidean(batch['ref'].detach().cpu().numpy())
 
-    savepath = os.path.join(expdir, f'vis_seqs_seed{seed}.mp4')
+    savepath = os.path.join(expdir, f'vis_seqs_seed{seed}_{config.dataset.name}.mp4')
     anim = visualize(
         skeleton,
         [ref, *out],
