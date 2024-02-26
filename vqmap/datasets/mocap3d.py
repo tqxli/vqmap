@@ -1,6 +1,29 @@
 from vqmap.datasets.base import *
 
 
+class MocapSimpleCompiled(MocapContBase):
+    def _load_data(self):
+        predictions = np.load(self.datapath, allow_pickle=True)[()]
+        self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
+        
+        for expname, data in tqdm(predictions.items(), desc='Preprocess'):
+            self.raw_num_frames += len(data)
+            data = data[::self.downsample] * self.scale
+            data = self._trim(data)
+            data = self._align(data)
+            data = self._normalize(data)
+            data = self._convert(self.data_rep, data)
+            
+            self.pose3d.append(data)
+                
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).flatten(1)
+        self.pose_dim = self.pose3d.shape[-1]
+        logger.info(f"Dataset chunking: {self.raw_num_frames} --> {self.pose3d.shape}")
+        
+        self.cfg.num_frames = self.num_frames
+
+
 class PupDevelopment(MocapContBase):
     def _load_data(self):
         predictions = np.load(self.datapath, allow_pickle=True)[()]

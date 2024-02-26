@@ -33,6 +33,7 @@ class MocapContBase(Dataset):
         self.normalize = cfg.normalize
         
         self.center_only = cfg.get('center_only', False)
+        logger.info(f"CENTER ONLY: {self.center_only}")
 
         self._load_data()
     
@@ -52,7 +53,7 @@ class MocapContBase(Dataset):
             
             self.pose3d.append(data)
 
-        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).flatten(1)
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).flatten(1).float()
         self.pose_dim = self.pose3d.shape[-1]
         logger.info(f"Dataset chunking: {self.raw_num_frames} --> {self.pose3d.shape}")
     
@@ -92,6 +93,14 @@ class MocapContBase(Dataset):
         data = (data - data.min()) / (data.max() - data.min())
         data = 2*(data-0.5)
         
+        # TODO: better normalization scheme - per-frame
+        # N, J, D = data.shape
+        # data = data.reshape((N, -1))
+        # data_min = data.min(1)[:, None]
+        # data_max = data.max(1)[:, None]
+        # data = (data - data_min) / (data_max - data_min)
+        # data = data.reshape((N, J, D))
+        
         return data
     
     def _convert(self, kind, joints3D):
@@ -112,7 +121,7 @@ class MocapContBase(Dataset):
         return data
 
     def _align(self, joints3D):
-        aligned = np.zeros_like(joints3D)
+        aligned = np.zeros((joints3D.shape[0], self.pose_profile.num_keypoint, self.pose_profile.ndim))
         for i, seq in enumerate(joints3D.reshape(-1, self.seqlen, *joints3D.shape[1:])):
             aligned[i*self.seqlen:(i+1)*self.seqlen] = self.pose_profile.align_pose(
                 seq, center_only=self.center_only
@@ -136,7 +145,7 @@ class MocapChunkBase(Dataset):
         self.sampling_step = cfg.sampling_step
         
         self.data_rep = cfg.data_rep
-        # self.pose_profile = skeleton_initialize(cfg.skeleton)
+        self.pose_profile = skeleton_initialize(cfg.skeleton)
         self.scale = cfg.scale
         self._load_data()
     

@@ -12,6 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 from vqmap.models import initialize_model
 from vqmap.optimizers import get_optimizer, get_lr_scheduler
 from vqmap.utils.serialize import torch_safe_load, flatten_dict
+from vqmap.datasets.augmentation import *
 
 
 class EngineBase(object):
@@ -156,6 +157,7 @@ class EngineBase(object):
         total_num_samples = 0
         
         for idx, batch in enumerate(dataloader):
+            batch = self._batch_augmentation(batch)
             batch = self._data_to_device(batch)
             out, loss, loss_dict = self.model(batch)
             tot_losses += loss.item()
@@ -165,9 +167,12 @@ class EngineBase(object):
         loss_names = list(loss_dict.keys())
         valid_losses /= total_num_samples
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, valid_losses))
-        logger.info(f"Epoch: {cur_epoch} Valid loss {tot_losses/total_num_samples} | {losses_str}")
+        logger.info(
+            f"Epoch[{cur_epoch+1}/{self.n_epochs}]"
+            + " Total Loss: {:.4f} | {}".format(tot_losses/total_num_samples, losses_str)
+        )
         for name, loss in zip(loss_names, valid_losses):
-            self.tb_logger.add_scalar(f'val/{name}', loss, cur_epoch)
+            self.tb_logger.add_scalar(f'val/{name}', loss, cur_epoch+1)
         return valid_losses[0]
 
     def save_models(self, save_to, metadata=None):
@@ -179,8 +184,6 @@ class EngineBase(object):
             'metadata': metadata,
         }
         torch.save(state_dict, save_to)
-        # logger.info('state dict is saved to {}, metadata: {}'.format(
-            # save_to, json.dumps(metadata, indent=4)))
 
     def load_models(self, state_dict_path, load_keys=None):
         with open(state_dict_path, 'rb') as fin:
@@ -210,12 +213,30 @@ class EngineBase(object):
         self.load_models(state_dict_path, load_keys)
 
     def _data_to_device(self, batch):
+        if isinstance(batch, torch.Tensor):
+            return batch.to(self.device)
+        
         for k, v in batch.items():
             if isinstance(v, torch.Tensor):
                 batch[k] = v.to(self.device)
         
         return batch
+    
+    def _batch_augmentation(self, batch):
+        # [B, T, D]
+        if not self.config.train.get("lr_augmentation", False):
+            return batch
+        
+        # if np.random.random() < 0.5:
+        #     return batch
 
+        motion = batch['motion']
+        motion_aug = lateral_flip(motion)
+        motion_aug = torch.cat((motion, motion_aug), 0)
+        batch['motion'] = motion_aug
+        batch['ref'] = motion_aug.clone()
+        batch['lr_augmentation'] = True
+        return batch
 
 def cur_step(cur_epoch, idx, N, fmt=None):
     _cur_step = cur_epoch + idx / N

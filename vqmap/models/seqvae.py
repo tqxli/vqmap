@@ -128,9 +128,15 @@ class SequentialVAE(nn.Module):
         self._prepare_objective()
         self.lambdas = self.cfg.lambdas
     
-    def compute_loss(self, batch, out, zinfo):
+    def compute_loss(self, batch, out, zinfo, z=None):
         recons = self.recons_loss(batch['motion'], out)
         loss = {"recons": recons}
+
+        if 'assignment' in self.lambdas and z is not None:
+            if batch.get('lr_augmentation', False):
+                loss["assignment"] = self.compute_assignment_loss(z)
+            else:
+                loss["assignment"] = recons.new_zeros(())
         
         bottleneck_loss = self.compute_bottleneck_loss(zinfo)        
         loss = {**bottleneck_loss, **loss}
@@ -161,6 +167,18 @@ class SequentialVAE(nn.Module):
         
         return kl
 
+    def compute_assignment_loss(self, z):
+        # TODO: dynamically flip batch by L/R
+        # and enforce their code assignment to be the same, or latents?
+        # the latter would just be mse, the former is tricky
+        # the augmentation should be introduced in trainer
+        # or cosine similarity
+        B = z.shape[0]
+        z = z.reshape(B, self.quantizer.n_groups, -1, *z.shape[2:])[:, 0]
+        z = z.reshape(2, -1, *z.shape[1:])
+        loss = F.mse_loss(z[0], z[1], reduction='sum')
+        return loss / B
+
     def compute_weighted_loss(self, loss):
         total_loss = []
         for key, lossval in loss.items():
@@ -171,7 +189,7 @@ class SequentialVAE(nn.Module):
     def forward(self, batch):
         z, z_info, latent = self.encode(batch)
         out = self.decode(z)
-        return out, *self.compute_loss(batch, out, z_info)
+        return out, *self.compute_loss(batch, out, z_info, latent)
     
     def encode(self, batch):
         latent = self.encoder(batch['motion'])
@@ -181,8 +199,14 @@ class SequentialVAE(nn.Module):
     def decode(self, z):
         return self.decoder(z)
     
-    def decode_latent(self, idx):
-        z = self.quantizer.codebook[idx].unsqueeze(0).unsqueeze(-1)
+    def decode_latent(self, j, i=None):
+        if j is not None:
+            z1 = self.quantizer.sub_quantizers[1].codebook[j]
+            z0 = self.quantizer.sub_quantizers[0].codebook[i]
+            z = torch.cat((z0, z1), axis=0).unsqueeze(0).unsqueeze(-1)
+            return self.decode(z)
+        
+        z = self.quantizer.codebook[j].unsqueeze(0).unsqueeze(-1)
         return self.decode(z)
 
 
@@ -321,7 +345,7 @@ class HierarchicalSeqVAE(MultiBranchSeqVAE):
 
     def decode_latent(self, code_1_idx, code_0_idx):
         quant_t = self.quantizer1.codebook[code_1_idx].unsqueeze(0).unsqueeze(-1)
-        quant_b = self.quantizer0.codebook[code_0_idx].unsqueeze(0).unsqueeze(-1).repeat(1, 1, 2**self.down_ts[1])
+        quant_b = self.quantizer0.codebook[code_0_idx].unsqueeze(0).unsqueeze(-1)#.repeat(1, 1, 2**self.down_ts[1])
         dec = self.decode(quant_t, quant_b)
 
         return dec

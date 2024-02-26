@@ -103,6 +103,7 @@ class TrainerEngine(EngineBase):
         total_num_samples = 0
         
         for idx, batch in tqdm.tqdm(enumerate(dataloader)):
+            batch = self._batch_augmentation(batch)
             batch = self._data_to_device(batch)
             out, loss, loss_dict = self.model(batch)
 
@@ -123,8 +124,8 @@ class TrainerEngine(EngineBase):
         train_losses /= total_num_samples
         losses_str = ' '.join('{}: {:.4f}'.format(x, y) for x, y in zip(loss_names, train_losses))
         logger.info(
-            f"Epoch[{cur_epoch}/{self.n_epochs}]"
+            f"Epoch[{cur_epoch+1}/{self.n_epochs}]"
             + " Total Loss: {:.4f} | {}".format(tot_losses/total_num_samples, losses_str)
         )
         for name, loss in zip(loss_names, train_losses):
-            self.tb_logger.add_scalar(f'train/{name}', loss, cur_epoch)
+            self.tb_logger.add_scalar(f'train/{name}', loss, cur_epoch+1)

@@ -63,10 +63,6 @@ def _initialize_dataset(cfg, split='train'):
     
     datapaths, candidates = retrieve_datapaths(cfg_dataset)
     
-    if isinstance(datapaths, list):
-        datapaths = datapaths[:12]
-        candidates = candidates[:12]
-    
     # split dataset into train and valid:
     # if by subjects/groups, split at datapaths
     # if by fraction, split after dataset is initialized (torch subset)
@@ -93,6 +89,16 @@ def _initialize_dataset(cfg, split='train'):
             'val':  indices[cutoff:]
         }
         dataset = {k:Subset(dataset, ind) for k, ind in indices.items()}
+    elif split_method == 'linear':
+        train_frac = cfg_dataset.split.frac
+        cutoff = int(train_frac * len(dataset))
+        np.random.seed(cfg.seed)
+        indices = np.arange(len(dataset))
+        indices = {
+            'train': indices[:cutoff],
+            'val':  indices[cutoff:]
+        }
+        dataset = {k:Subset(dataset, ind) for k, ind in indices.items()}
     else:
         dataset = {split:dataset}
 
@@ -104,8 +110,17 @@ def _initialize_dataset(cfg, split='train'):
         dataset, cfg.dataloader,
         batch_size=cfg.dataloader.batch_size if split == 'train' else cfg.dataloader.eval_batch_size,
         shuffle=(split == 'train'),
-        collate_fn=collate_fn_mocap if 'token' not in cfg_dataset.split.mocap_type else None
+        collate_fn=get_collate_fcn(cfg_dataset),
+        drop_last=cfg.multiple_datasets,
     )
+
+
+def get_collate_fcn(cfg_dataset):
+    if cfg_dataset.split.mocap_type == 'token':
+        return None
+    elif hasattr(cfg_dataset, 'collate_fcn'):
+        return None
+    return collate_fn_mocap
 
 
 def collate_fn_mocap(samples):
@@ -120,7 +135,7 @@ def collate_fn_mocap(samples):
     
     batch = {
         "motion": motion,
-        "action": actions,
+        # "action": actions,
         "length": [seqlen]*batch_size,
         "ref": motion.clone()
     }
@@ -143,42 +158,64 @@ def get_dataloader(datasets, cfg, batch_size, shuffle=True, collate_fn=None, dro
     return dataloaders
 
 
-def initialize_dataset_single(cfg, splits):    
-    dataloaders = {}
-    for split in splits:
-        dataloaders_split = _initialize_dataset(cfg, split=split)
-        dataloaders.update(dataloaders_split)
-    infostr = ':'.join([f'{split} {dataloaders[split].dataset.__len__()}' for split in dataloaders])
-    logger.info(f"Dataset splits: {infostr}")
-    return dataloaders
-
-
-def initialize_dataset_multi(cfg, splits):
-    dataloaders = []
-    for cfg_dataset in cfg.dataset:
-        cfg_new = deepcopy(cfg)
-        cfg_new.update(cfg_dataset)
-        loaders = initialize_dataset_single(cfg_new, splits)
-        dataloaders.append(loaders)
-    
-    dataloaders = {k: [loaders[k] for loaders in dataloaders] for k in dataloaders[0]}
-    return dataloaders
-
-
-def initialize_dataset(cfg, splits=['train', 'val']):
+def initialize_dataset_single(cfg, splits):
     split_method = cfg.dataset.split.method
     assert split_method in ['fraction', 'subject']
     logger.info(f'Split dataset by {split_method}')
     
     if (split_method == 'fraction') and (splits != ['inference']):
         splits = ['train']
+
+    dataloaders = {}
+    for split in splits:
+        dataloaders_split = _initialize_dataset(cfg, split=split)
+        dataloaders.update(dataloaders_split)
+    infostr = ':'.join([f'{split} {dataloaders[split].dataset.__len__()}' for split in dataloaders])
+    logger.info(f"Dataset splits: {infostr}")
     
-    if OmegaConf.is_list(cfg.dataset):
+    if not cfg.multiple_datasets:
+        nfeats = retrieve_input_dim(dataloaders[splits[0]])
+        cfg.model.input_feats = nfeats
+        logger.debug(f"Dataset dimension: {nfeats}")
+    return dataloaders
+
+
+def retrieve_input_dim(dataloader):
+    try: 
+        nfeats = dataloader.dataset.dataset.pose_profile.pose_dim
+    except:
+        nfeats = dataloader.dataset.pose_profile.pose_dim
+    return nfeats
+
+
+def initialize_dataset_multi(cfg, splits):
+    dataloaders = []
+    for cfg_dataset in cfg.dataset:
+        cfg_new = deepcopy(cfg)
+        cfg_new.update(cfg_dataset)        
+        loaders = initialize_dataset_single(cfg_new, splits)
+        dataloaders.append(loaders)
+    
+    dataloaders = {k: [loaders[k] for loaders in dataloaders] for k in dataloaders[0]}
+    input_feats = []
+    for dataloader in dataloaders[splits[0]]:
+        nfeats = retrieve_input_dim(dataloader)
+        input_feats.append(nfeats)
+    cfg.model.nfeats = input_feats
+    logger.debug(f"Dataset dimension: {input_feats}")
+    
+    return dataloaders
+
+
+def initialize_dataset(cfg, splits=['train', 'val']):    
+    is_multi = OmegaConf.is_list(cfg.dataset)
+    cfg.multiple_datasets = is_multi
+    if is_multi:
         return initialize_dataset_multi(cfg, splits)
     return initialize_dataset_single(cfg, splits)
 
 
 if __name__ == '__main__':
     from omegaconf import OmegaConf
-    cfg = OmegaConf.load('configs/dataset.yaml')
-    dataloaders = initialize_dataset(cfg.dataset)
+    cfg = OmegaConf.load('configs/base/vposer.yaml')
+    dataloaders = initialize_dataset(cfg)
