@@ -1,0 +1,10 @@
+expdir: experiments/motiongpt/pupdev_6_9
+seed: 1024
+
+# configurations
+dataset: configs/dataset/motion_token.yaml
+dataloader: configs/dataloader/base.yaml
+model: configs/model/gpt.yaml
+optimizer: configs/optimizer/adamw.yaml
+lr_scheduler: configs/lr_scheduler/cosine_annealing.yaml
+train: configs/train/base.yaml
