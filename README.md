@@ -1,6 +1,8 @@
 # Vector Quantized Representations for Efficient Hierarchical Delineation of Behavioral Repertoires
 
-Code release for **Vector Quantized Representations for Efficient Hierarchical Delineation of Behavioral Repertoires**, accepted as poster in COSYNE 2024.
+Code for **Vector Quantized Representations for Efficient Hierarchical Delineation of Behavioral Repertoires**, accepted as a poster in COSYNE 2024.
+
+[[Abstract]](https://drive.google.com/file/d/1Tp-YbPOoHTLWn6uCWEtj_nvdn9G8H9AQ/view?usp=drive_link)
 
 ## Abstract
 Understanding animal behaviors and their neural underpinnings requires precise kinematic measurements plus analytical methods to parse these continuous measurements into interpretable, organizational descriptions. Existing approaches, such as Markov models or clustering, can identify stereotyped behavioral motifs out of 2D or 3D keypoint-based data but are limited in their interpretability, computational efficiency, and/or ability to seamlessly integrate new measurements. Moreover, these methods lack the capacity for capturing the intrinsic hierarchy among identified behavioral motifs (e.g., ‘turning’ → subtypes of left/right turning with varying angles), necessitating subjective post hoc annotations by human labelers for grouping. 
@@ -12,7 +14,7 @@ In this paper, we propose an end-to-end generative behavioral analysis approach 
 ## Environment Setup
 ```
 conda create -n vqmap python=3.8
-pip install torch==1.11.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu111
+pip install torch==1.11.0+cu113 --extra-index-url https://download.pytorch.org/whl/cu113
 pip install -r requirments.txt
 pip install -e .
 ```
