@@ -36,7 +36,7 @@ def visualize_latent_space(
 
 def visualize_seq(
     skeleton, to_plot, idx, savepath,
-    limits=10, stride=4, scale=3, node_size=30,
+    limits=1, stride=4, scale=2, node_size=30,
 ):
     mm = 1/25.4
     w, h = 60, 60
@@ -59,7 +59,10 @@ def visualize_seq(
     to_plot *= scale
     t = to_plot.shape[0]
     for frame in range(0, t, stride):
-        alpha = 0.1 + 0.9*(frame/t)
+        if t == 1:
+            alpha = 1
+        else:
+            alpha = 0.1 + 0.9*(frame/t)
         pose = to_plot[frame]
         joints_output = deepcopy(pose)
         joints_output = joints_output.reshape((-1, 3))
@@ -76,7 +79,7 @@ def visualize_seq(
                 cmap=colormap,
                 s=node_size,
                 zorder=1,
-                alpha=0.1 + 0.9*(frame/t),
+                alpha=alpha,
                 linewidth=0,
             )
             ax.scatter(
@@ -86,7 +89,7 @@ def visualize_seq(
                 s=node_size+0.7,
                 zorder=4,
                 edgecolor="k",
-                linewidth=0.5, alpha=0.1 + 0.9*(frame/t)
+                linewidth=0.5, alpha=alpha,
             )
 
         title = f" Code {idx}"
@@ -103,8 +106,10 @@ def visualize_seq(
         ax.xaxis._axinfo["grid"]['color'] =  (1,1,1,0)
         ax.yaxis._axinfo["grid"]['color'] =  (1,1,1,0)
         ax.zaxis._axinfo["grid"]['color'] =  (1,1,1,0)
-        fig.savefig(savepath+f'/code{idx}.png', transparent=True)
-        plt.close()
+        
+        if savepath is not None:
+            fig.savefig(savepath+f'/code{idx}.png', transparent=False)
+            plt.close()
 
 
 def visualize(skeleton, to_plot, nframes, fname, titles):
@@ -116,7 +121,7 @@ def visualize(skeleton, to_plot, nframes, fname, titles):
 
 def visualize3d(
     skeleton, to_plot, nframes, fname, titles,
-    prior=0, limits=10, fps=50,
+    prior=0, limits=1, fps=50,
 ):
     axes = []
     n_cols = to_plot[0].shape[0] 
