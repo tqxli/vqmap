@@ -42,11 +42,17 @@ def _rotate_vec_3d(vec1, vec2):
     :param vec2: A 3d "destination" vector
     :return mat: A transform matrix (3x3) which when applied to vec1, aligns it with vec2.
     """
-    a, b = (vec1 / np.linalg.norm(vec1)).reshape(3), (vec2 / np.linalg.norm(vec2)).reshape(3)
+    a_norm = np.linalg.norm(vec1)
+    b_norm = np.linalg.norm(vec2)
+    if a_norm == 0:
+        return np.eye(3)
+    a, b = (vec1 / a_norm).reshape(3), (vec2 / b_norm).reshape(3)
     v = np.cross(a, b)
     c = np.dot(a, b)
     s = np.linalg.norm(v)
     kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
+    if s == 0:
+        return np.eye(3)
     rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
     return rotation_matrix
 
@@ -69,20 +75,23 @@ class PoseProfile:
         
         joint_names = info["keypoint_names"]
         self.num_keypoint = info["num_keypoint"]
+        self.ndim = info.get("ndim", 3)
+        self.pose_dim = self.num_keypoint * self.ndim
 
         self.kinematic_tree = info["kinematic_tree"]
 
         self.anterior, self.posterior = info["anterior"], info["posterior"]
         self.indices_reorder = indices_reorder = np.array(info["indices_reorder"])
-        self.joint_names = [joint_names[idx] for idx in indices_reorder]
         
         self.offsets = info.get("offsets", None)
         logger.info(f"Pose profile: {name}")
         logger.info(f"Number of keypoints: {self.num_keypoint}")
-        logger.info("Kinematic tree: ")
-        for chain in self.kinematic_tree:
-            logger.info(f'     Chain: {[self.joint_names[idx] for idx in chain]}')
-        logger.info(f"Align direction to +x: {self.joint_names[self.anterior]}-{self.joint_names[self.posterior]}")
+        if joint_names is not None:
+            self.joint_names = [joint_names[idx] for idx in indices_reorder]
+            logger.info("Kinematic tree: ")
+            for chain in self.kinematic_tree:
+                logger.info(f'     Chain: {[self.joint_names[idx] for idx in chain]}')
+            logger.info(f"Align direction to +x: {self.joint_names[self.anterior]}-{self.joint_names[self.posterior]}")
 
         # visualization
         self.colors = info.get("colors", None)
