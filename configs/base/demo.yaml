@@ -1,0 +1,10 @@
+expdir: experiments/demo/trial0
+seed: 1024
+
+# configurations
+dataset: configs/dataset/demo_mocap.yaml
+dataloader: configs/dataloader/base.yaml
+model: configs/model/demo_vqvae.yaml
+optimizer: configs/optimizer/adamw.yaml
+lr_scheduler: configs/lr_scheduler/cosine_annealing.yaml
+train: configs/train/base.yaml

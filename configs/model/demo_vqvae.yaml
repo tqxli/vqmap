@@ -1,0 +1,28 @@
+model:
+  name: SequentialVAE
+  latent_dim: 16
+  nfeats: 69
+
+  encoder:
+    cls: Conv1DEncoder
+    down_t: 4
+    width: 256
+  decoder:
+    cls: Conv1DDecoder
+    down_t: 4
+    width: 256
+  bottleneck:
+    type: quantizer
+    args:
+      name: QuantizeEMAReset
+      n_groups: 2
+      nb_code: [8, 12]
+      code_dim: 16
+      mu: 0.99
+      beta: 0.25
+
+  lambdas:
+    recons: 1.0
+    commitment: 0.02
+    kl: 0.00001
+    assignment: 0.1

@@ -1,0 +1,14 @@
+train:
+    pretrain_save_path: pretrain_last.pth
+    best_pretrain_save_path: pretrain_best.pth
+    model_save_path: model_last.pth
+    best_model_save_path: model_best.pth
+    epochs: 450
+    val_epochs: 10
+    finetune_lr_decay: 1
+    log_step: 10
+    grad_clip: 2
+
+    use_fp16: False
+
+    lr_augmentation: True

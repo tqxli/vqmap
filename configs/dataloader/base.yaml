@@ -1,0 +1,6 @@
+dataloader: 
+  batch_size: 128
+  eval_batch_size: 128
+  # train_eval_split: 0.8
+  num_workers: 1  
+  pin_memory: False

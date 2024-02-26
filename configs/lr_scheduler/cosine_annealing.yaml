@@ -1,0 +1,3 @@
+lr_scheduler:
+    name: CosineAnnealingLR
+    T_max: 50

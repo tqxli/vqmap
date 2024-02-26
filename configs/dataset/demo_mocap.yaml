@@ -1,0 +1,21 @@
+dataset:
+  name: MocapSimpleCompiled
+  root: 
+  seqlen: 128
+
+  # mocap skeleton profile
+  skeleton: rat23
+  data_rep: xyz
+  
+  # data preproc
+  stride: 128
+  downsample: 1
+  scale: 0.1
+  normalize: True
+
+  center_only: False
+
+  split:
+    method: fraction
+    frac: 0.9
+    mocap_type: lone
