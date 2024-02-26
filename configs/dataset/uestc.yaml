@@ -1,0 +1,24 @@
+dataset:
+  name: UESTC
+  root: /home/tianqingli/dl-projects/ACTOR/data/uestc/data_frontview.npy
+  seqlen: 128
+  
+  # mocap skeleton profile
+  skeleton: human_uestc
+  data_rep: xyz
+
+  # data preproc
+  stride: 1
+  downsample: 1
+  scale: 1
+  normalize: False
+
+  sampling: conseq
+  sampling_step: 1
+
+  split:
+    method: fraction
+    split_ids_train: ['M1']
+    split_ids_val: ['M6']
+    frac: 0.8
+    mocap_type: lone

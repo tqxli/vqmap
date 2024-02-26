@@ -1,0 +1,29 @@
+model:
+  name: MultiBranchSeqVAE
+  latent_dim: 64
+  # only exist if with multiple input branches
+  input_feats: [69, 54]
+  nfeats: 128
+
+  encoder:
+    cls: Conv1DEncoder
+    down_t: 4
+    width: 256
+  decoder:
+    cls: Conv1DDecoder
+    down_t: 4
+    width: 256
+  bottleneck:
+    type: quantizer
+    args:
+      name: QuantizeEMAReset
+      nb_code: 64
+      code_dim: 64
+      mu: 0.99
+      beta: 0.25
+
+  lambdas:
+    recons0: 1.0
+    recons1: 1.0
+    commitment: 0.02
+    kl: 0.0001

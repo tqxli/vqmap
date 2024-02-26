@@ -1,0 +1,10 @@
+model:
+  name: GPT
+
+  vocab_size: 64
+  block_size: 256
+  n_layer: 4
+  n_embd: 256
+  n_head: 4
+  dropout: 0.2
+  bias: True

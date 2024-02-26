@@ -1,0 +1,26 @@
+model:
+  name: HierarchicalSeqVAE
+  latent_dim: [32, 32]
+  # input_feats: [69, 54]
+  nfeats: 69
+  down_ts: [4, 0]
+
+  encoder:
+    cls: Conv1DEncoder
+    width: 256
+  decoder:
+    cls: Conv1DDecoder
+    width: 256
+  bottleneck:
+    type: quantizer
+    num_codes: [6, 12]
+    args:
+      name: QuantizeEMAReset
+      code_dim: 32
+      mu: 0.99
+      beta: 0.25
+
+  lambdas:
+    recons: 1.0
+    commitment: 0.02
+    kl: 0.0001
