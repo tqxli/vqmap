@@ -1,0 +1,16 @@
+_target_: csbev.model.quantizer.MixBottleneckv2
+
+# number of channels outputted by the encoder
+in_channels: 64
+code_dim: 16
+
+latent_vars:
+  discrete:
+    _target_: csbev.model.quantizer.QuantizeEMAReset
+    _partial_: true
+    mu: 0.99
+    beta: 0.25
+    nb_code: 8
+  continuous:
+    _target_: csbev.model.quantizer.VariationalBottleneck
+    _partial_: true

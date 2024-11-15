@@ -1,0 +1,16 @@
+_target_: csbev.model.quantizer.MultiGroupQuantizer
+
+n_groups: 2
+codebook_size: [8, 16]
+code_dim: [32, 32]
+latent_correation_loss: false
+
+# n_groups: 3
+# codebook_size: [8, 8, 8]
+# code_dim: [20, 20, 20]
+
+sub_quantizer:
+  _target_: csbev.model.quantizer.QuantizeEMAReset
+  _partial_: true
+  mu: 0.99
+  beta: 0.25

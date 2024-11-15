@@ -1,0 +1,29 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: rat23
+datadim: 3
+
+keypoints_init: ['Snout', 'EarL', 'EarR', 'SpineF', 'SpineM', 'SpineL', 'TailBase', 'ShoulderL', 'ElbowL', 'WristL', 'HandL', 'ShoulderR', 'ElbowR', 'WristR', 'HandR', 'HipL', 'KneeL', 'AnkleL', 'FootL', 'HipR', 'KneeR', 'AnkleR', 'FootR']
+
+center_keypoint: SpineM
+
+body_mapping:
+  Head: ['Snout', 'EarL', 'EarR']
+  Trunk: ['SpineF', 'SpineM', 'SpineL', 'TailBase']
+  ForelimbL: ['ShoulderL', 'ElbowL', 'WristL', 'HandL']
+  ForelimbR: ['ShoulderR', 'ElbowR', 'WristR', 'HandR']
+  HindlimbL: ['HipL', 'KneeL', 'AnkleL', 'FootL']
+  HindlimbR: ['HipR', 'KneeR', 'AnkleR', 'FootR']
+
+keypoints: ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout', 'SpineL', 'TailBase', 'ShoulderL', 'ElbowL', 'WristL', 'HandL', 'ShoulderR', 'ElbowR', 'WristR', 'HandR', 'HipL', 'KneeL', 'AnkleL', 'FootL', 'HipR', 'KneeR', 'AnkleR', 'FootR']
+
+kinematic_tree:
+  - ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout', 'EarL']
+  - ['SpineM', 'SpineL', 'TailBase']
+  - ['SpineF', 'ShoulderL', 'ElbowL', 'WristL', 'HandL']
+  - ['SpineF', 'ShoulderR', 'ElbowR', 'WristR', 'HandR']
+  - ['SpineL', 'HipL', 'KneeL', 'AnkleL', 'FootL']
+  - ['SpineL', 'HipR', 'KneeR', 'AnkleR', 'FootR']
+
+anterior_keypoint: ['EarL', 'EarR']
+posterior_keypoint: TailBase
+align_direction: x

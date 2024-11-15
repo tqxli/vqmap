@@ -1,0 +1,9 @@
+train:
+  batch_size: 128
+  num_workers: 1  
+  pin_memory: True
+
+val:
+  batch_size: 128
+  num_workers: 1
+  pin_memory: True

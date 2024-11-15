@@ -1,0 +1,2 @@
+_target_: csbev.model.quantizer.VariationalBottleneck
+latent_dim: 64

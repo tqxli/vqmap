@@ -1,0 +1,27 @@
+defaults:
+  - _self_
+  - ../skeleton@skeleton: mouse22
+
+_target_: csbev.dataset.base.Topdown2DPoseDataset
+
+name: mouse_demo
+dataset_type: dannce_lone
+dataroot: /media/mynewdrive/datasets/dannce/demo/labels/compiled.npy
+datapaths: 
+data_rep: xyz
+alignment: lock_facing
+normalize: false
+scale: 0.02
+seqlen: 128
+t_downsample: 2
+
+keypoints_remove: ["WristL", "ForepawL", "WristR", "ForepawR", "AnkleL", "HindpawL", "AnkleR", "HindpawR"]
+
+split:
+  method: subject
+  # train_frac: 0.9
+  # split_ids: ['m1', 'm2']
+  # split_ids_train: ['m1']
+  split_ids_train: ['m1', 'm6', 'm7', 'm8']
+  split_ids_val: ['m2']
+  

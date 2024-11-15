@@ -1,0 +1,24 @@
+defaults:
+  - _self_
+  - ../skeleton@skeleton: mouse_moseq_2d
+
+_target_: csbev.dataset.base.MoSeqDLC2DDataset
+
+name: mouse_moseq_2d
+dataset_type: moseq
+dataroot: /media/mynewdrive/datasets/keypoint-moseq/dlc_project/videos
+datapaths:
+data_rep: xyz
+alignment: lock_facing
+normalize: false
+scale: 0.02
+seqlen: 128
+t_downsample: 1
+
+split:
+  method: fraction
+  split_ids: ['videos']
+  split_ids_train: []
+  split_ids_val: []
+  train_frac: 0.9
+  mocap_type: mat

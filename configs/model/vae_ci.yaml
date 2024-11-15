@@ -1,0 +1,40 @@
+defaults:
+  - encoder: encoder_ci
+  - decoder: decoder_tcn
+  - bottleneck: quantizer_mg
+  - _self_
+
+_target_: csbev.model.seqvae.SeqVAE
+
+lambdas:
+  recons: 1.0
+  commitment: 0.02
+  assignment: 0.0
+  velocity: 0.0
+  correlation: 0.0
+
+loss_cfg:
+  recons: skewed_mse
+  skew_factor: 0
+  normalization: softmax
+  aggregation: mean
+
+  assignment_delay: 1500
+
+# loss_helper:
+#   _target_: csbev.model.loss.LossHelper
+#   _partial_: true
+#   lambdas:
+#     recons: 1.0
+#     commitment: 0.02
+#     assignment: 0.0
+#   cfg:
+#     recons: 
+#       type: skewed_mse
+#       skew_factor: 0
+#       normalization: softmax
+#       aggregation: mean
+#     commitment:
+#     assignment: 
+#       delay: 1500
+#     velocity:

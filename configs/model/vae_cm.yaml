@@ -1,0 +1,21 @@
+defaults:
+  - encoder: encoder_tcn
+  - decoder: decoder_tcn
+  - bottleneck: quantizer_mg
+  - _self_
+
+_target_: csbev.model.seqvae.SeqVAE
+
+lambdas:
+  recons: 1.0
+  commitment: 0.02
+  # KLDiv: 0.1
+  assignment: 0.0
+  velocity: 0.0
+  correlation: 0.0
+
+loss_cfg:
+  recons: skewed_mse
+  skew_factor: 1
+  normalization: softmax
+  aggregation: mean

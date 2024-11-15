@@ -1,0 +1,8 @@
+full:
+  batch_size: 100
+  num_workers: 1  
+  pin_memory: False
+val:
+  batch_size: 50
+  num_workers: 1
+  pin_memory: True

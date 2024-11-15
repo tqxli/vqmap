@@ -1,0 +1,35 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: mouse_moseq
+datadim: 2
+
+keypoints_init:
+  - spine4
+  - spine3
+  - spine2
+  - spine1
+  - head
+  - nose
+  - rightEar
+  - leftEar
+
+keypoints:
+
+center_keypoint: spine1
+
+body_mapping:
+  Head: ['head', 'nose', 'rightEar', 'leftEar']
+  Trunk: ['spine1', 'spine2', 'spine3', 'spine4']
+  ForelimbL: []
+  ForelimbR: []
+  HindlimbL: []
+  HindlimbR: []
+
+kinematic_tree:
+  - ['spine2', 'spine1', 'head', 'nose']
+  - ['nose', 'leftEar']
+  - ['nose', 'rightEar']
+  - ['spine2', 'spine3', 'spine4']
+
+anterior_keypoint: ['nose']
+posterior_keypoint: ['spine2']
+align_direction: x

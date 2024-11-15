@@ -1,0 +1,113 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: mouse44
+datadim: 3
+
+keypoints_init:
+- EarL(dorsal)
+- EarL(tip)
+- EarL(ventral)
+- EarR(dorsal)
+- EarR(tip)
+- EarR(ventral)
+- Snout
+- Chin
+- Neck(top)
+- Spine(top)
+- Spine(mid)
+- Spine(base)
+- Tail(base)
+- Tail(mid_r)
+- Tail(mid_c)
+- Tail(tip)
+- ShoulderL
+- ElbowL(med)
+- ElbowL(lat)
+- WristL
+- PawL(med)
+- PawL(lat)
+- FingerL
+- ShoulderR
+- ElbowR(med)
+- ElbowR(lat)
+- WristR
+- PawR(med)
+- PawR(lat)
+- FingerR
+- HipL
+- KneeL(med)
+- KneeL(lat)
+- AnkleL
+- FootL(med)
+- FootL(lat)
+- ToeL
+- HipR
+- KneeR(med)
+- KneeR(lat)
+- AnkleR
+- FootR(med)
+- FootR(lat)
+- ToeR
+
+keypoints:
+- EarL(dorsal)
+- EarL(tip)
+- EarL(ventral)
+- EarR(dorsal)
+- EarR(tip)
+- EarR(ventral)
+- Snout
+- Chin
+- Neck(top)
+- Spine(top)
+- Spine(mid)
+- Spine(base)
+- Tail(base)
+- ShoulderL
+- ElbowL(med)
+- ElbowL(lat)
+- WristL
+- PawL(med)
+- PawL(lat)
+- FingerL
+- ShoulderR
+- ElbowR(med)
+- ElbowR(lat)
+- WristR
+- PawR(med)
+- PawR(lat)
+- FingerR
+- HipL
+- KneeL(med)
+- KneeL(lat)
+- AnkleL
+- FootL(med)
+- FootL(lat)
+- ToeL
+- HipR
+- KneeR(med)
+- KneeR(lat)
+- AnkleR
+- FootR(med)
+- FootR(lat)
+- ToeR
+
+center_keypoint: Spine(mid)
+anterior_keypoint: [EarL(tip), EarR(tip)]
+posterior_keypoint: Tail(base)
+align_direction: x
+
+body_mapping:
+  Head: ['EarL(dorsal)', 'EarL(tip)', 'EarL(ventral)', 'EarR(dorsal)', 'EarR(tip)', 'EarR(ventral)', 'Snout', 'Chin']
+  Trunk: ['Neck(top)', 'Spine(top)', 'Spine(mid)', 'Spine(base)', 'Tail(base)']
+  ForelimbL: ['ShoulderL', 'ElbowL(med)', 'ElbowL(lat)', 'WristL', 'PawL(med)', 'PawL(lat)', 'FingerL']
+  ForelimbR: ['ShoulderR', 'ElbowR(med)', 'ElbowR(lat)', 'WristR', 'PawR(med)', 'PawR(lat)', 'FingerR']
+  HindlimbL: ['HipL', 'KneeL(med)', 'KneeL(lat)', 'AnkleL', 'FootL(med)', 'FootL(lat)', 'ToeL']
+  HindlimbR: ['HipR', 'KneeR(med)', 'KneeR(lat)', 'AnkleR', 'FootR(med)', 'FootR(lat)', 'ToeR']
+
+kinematic_tree:
+  - ['Spine(mid)', 'Spine(top)', 'Neck(top)', 'EarL(dorsal)', 'EarL(tip)', 'EarL(ventral)', 'EarR(dorsal)', 'EarR(tip)', 'EarR(ventral)', 'Snout', 'Chin']
+  - ['Spine(mid)', 'Spine(base)', 'Tail(base)']
+  - ['Spine(top)', 'ShoulderL', 'ElbowL(med)', 'ElbowL(lat)', 'WristL', 'PawL(med)', 'PawL(lat)', 'FingerL']
+  - ['Spine(top)', 'ShoulderR', 'ElbowR(med)', 'ElbowR(lat)', 'WristR', 'PawR(med)', 'PawR(lat)', 'FingerR']
+  - ['Spine(base)', 'HipL', 'KneeL(med)', 'KneeL(lat)', 'AnkleL', 'FootL(med)', 'FootL(lat)', 'ToeL']
+  - ['Spine(base)', 'HipR', 'KneeR(med)', 'KneeR(lat)', 'AnkleR', 'FootR(med)', 'FootR(lat)', 'ToeR']

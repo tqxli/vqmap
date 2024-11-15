@@ -1,0 +1,19 @@
+_target_: csbev.model.encoder.MIEncoder
+
+encoder_shared:
+  _target_: csbev.model.encoder.Conv1DEncoder
+  in_channels: 128
+  out_channels: 64
+  hidden_dim: 256
+  n_ds: 3
+  strides: 2
+  depth: 3
+  dilation: 3
+  activation: relu
+  normalization: LN
+  out_kernel_size: 3
+
+in_datadim: 3
+in_channels:
+  rat23: 23
+  mouse_demo: 20

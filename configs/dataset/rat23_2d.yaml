@@ -1,0 +1,25 @@
+defaults:
+  - _self_
+  - ../skeleton@skeleton: rat23
+
+_target_: csbev.dataset.base.Topdown2DPoseDataset
+
+name: rat23_2d
+dataset_type: dannce_lone
+datapaths: 
+dataroot: /media/mynewdrive/datasets/dannce/social_rat/SCN2A_WK1/SCN2A_WK1.npy
+data_rep: xyz
+alignment: lock_facing
+normalize: false
+scale: 0.01
+seqlen: 128
+
+keypoints_remove: ["ElbowL", "WristL", "ElbowR", "WristR", "KneeL", "AnkleL", "FootL", "KneeR", "AnkleR", "FootR"]
+
+split:
+  method: subject
+  split_ids_train: ['M1', 'M2', 'M3', 'M4', 'M5']
+  # split_ids_train: ['2022_09_15_M1']
+  split_ids_val: ['2022_09_15_M6']
+  # frac: 0.9
+  # mocap_type: lone

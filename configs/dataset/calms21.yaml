@@ -1,0 +1,24 @@
+defaults:
+  - _self_
+  - ../skeleton@skeleton: calms21
+
+_target_: csbev.dataset.base.CalMS21PoseDataset
+
+name: calms21
+dataset_type: 
+dataroot: /media/mynewdrive/datasets/CalMS21/mab-e-baselines-master/data/calms21_task1_train.npy
+datapaths:
+data_rep: xyz
+alignment: lock_facing
+normalize: false
+scale: 0.01
+seqlen: 128
+t_downsample: 1
+
+split:
+  method: fraction
+  split_ids: []
+  split_ids_train: []
+  split_ids_val: []
+  train_frac: 0.9
+  mocap_type: mat

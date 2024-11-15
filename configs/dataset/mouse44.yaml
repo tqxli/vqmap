@@ -1,0 +1,20 @@
+defaults:
+  - _self_
+  - ../skeleton@skeleton: mouse44
+
+_target_: csbev.dataset.base.SimpleCompiledPoseDataset
+
+name: mouse44
+dataset_type: 
+datapaths: 
+dataroot: /media/mynewdrive/datasets/dannce/mouse44_ephys/data/sessions_pos_compiled.npy
+data_rep: xyz
+alignment: lock_facing
+normalize: false
+scale: 0.02
+seqlen: 128
+t_downsample: 2
+
+split:
+  split_ids_train: ['bm_KSp012_20211209_S1dz_post']
+  split_ids_val: ['bm_KSp016_20220224_S1tz']

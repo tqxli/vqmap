@@ -1,0 +1,23 @@
+defaults:
+  - _self_
+  - ../skeleton@skeleton: rat23
+
+_target_: csbev.dataset.base.SimpleCompiledPoseDataset
+
+name: mouse23
+dataset_type: dannce_basic
+datapaths: 
+dataroot: /media/mynewdrive/datasets/dannce/mouse23.npy
+  # - /home/tianqingli/dl-projects/harvard-cluster/Ugne_mouse/BALBC_LONE
+  # - /home/tianqingli/dl-projects/harvard-cluster/Ugne_mouse/BLACK6_LONE
+data_rep: xyz
+alignment: lock_facing
+normalize: false
+scale: 0.02
+seqlen: 128
+
+split:
+  method: subject
+  split_ids_train: ["W1", "W2", "W3", "W4", "W5", "W6", "W7", "B1", "B2", "B3", "B4", "B5", "B6", "B7"]
+  # split_ids_train: ["2024_04_25_W1", "2024_04_25_B1"]
+  split_ids_val: ["2024_04_26_W8", "2024_04_26_B8"]

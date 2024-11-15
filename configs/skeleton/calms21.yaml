@@ -1,0 +1,33 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: calms21
+datadim: 2
+
+keypoints_init:
+  - Nose
+  - LeftEar
+  - RightEar
+  - Neck
+  - LeftHip
+  - RightHip
+  - Tail
+
+keypoints:
+
+center_keypoint: Neck
+
+body_mapping:
+  Head: ['Nose', 'LeftEar', 'RightEar']
+  Trunk: ['Neck', 'Tail']
+  ForelimbL: []
+  ForelimbR: []
+  HindlimbL: ['LeftHip']
+  HindlimbR: ['RightHip']
+
+kinematic_tree:
+  - ['Neck', 'LeftEar', 'RightEar', 'Nose', 'LeftEar']
+  - ['Neck', 'Tail', 'LeftHip']
+  - ['Neck', 'Tail', 'RightHip']
+
+anterior_keypoint: ['Nose']
+posterior_keypoint: ['Tail']
+align_direction: x

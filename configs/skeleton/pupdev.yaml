@@ -1,0 +1,59 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: pupdev
+datadim: 3
+
+keypoints_init:
+  - EarL
+  - EarR
+  - Snout
+  - SpineF
+  - SpineM
+  - TailBase
+  - TailMid
+  - TailEnd
+  - ForepawL
+  - ForelimbL
+  - ForepawR
+  - ForelimbR
+  - HindpawL
+  - HindlimbL
+  - HindpawR
+  - HindlimbR
+
+center_keypoint: SpineM
+
+body_mapping:
+  Head: ['Snout', 'EarL', 'EarR']
+  Trunk: ['SpineF', 'SpineM', 'TailBase']
+  ForelimbL: ['ForelimbL', 'ForepawL']
+  ForelimbR: ['ForelimbR', 'ForepawR']
+  HindlimbL: ['HindlimbL', 'HindpawL']
+  HindlimbR: ['HindlimbR', 'HindpawR']
+
+keypoints:
+  - EarL
+  - EarR
+  - Snout
+  - SpineF
+  - SpineM
+  - TailBase
+  - ForepawL
+  - ForelimbL
+  - ForepawR
+  - ForelimbR
+  - HindpawL
+  - HindlimbL
+  - HindpawR
+  - HindlimbR
+
+kinematic_tree:
+  - ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout', 'EarL']
+  - ['SpineM', 'TailBase']
+  - ['SpineF', 'ForelimbL', 'ForepawL']
+  - ['SpineF', 'ForelimbR', 'ForepawR']
+  - ['SpineM', 'HindlimbL', 'HindpawL']
+  - ['SpineM', 'HindlimbR', 'HindpawR']
+
+anterior_keypoint: ['EarL', 'EarR']
+posterior_keypoint: TailBase
+align_direction: x

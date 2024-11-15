@@ -1,0 +1,39 @@
+defaults:
+  - _self_
+  - dataloader: inference
+  # Specify datasets HERE if different
+  - dataset@datasets.rat23: rat23
+  - dataset@datasets.mouse_demo: mouse_demo
+  # - dataset@datasets.mouse44: mouse44
+  - dataset@datasets.mouse23: mouse23
+  # - dataset@datasets.pupdev_p7: pupdev_p7
+  # - dataset@datasets.pupdev_p14: pupdev_p14
+  # - dataset@datasets.pupdev_p21: pupdev_p21
+  # - dataset@datasets.pupdev_p30: pupdev_p30
+
+result_root: analysis
+checkpoint_path: null
+datasets: null
+
+splits: ['val']
+seed: 42
+
+modes:
+  # embed:
+
+  # cross_conversion:
+
+  sample:
+    repeats: 2
+    sort_by_similarity: false
+    sample_index: [6, 1]
+
+  vis_reconstruction:
+    n_samples: 4
+
+  benchmark:
+
+  beh_stability:
+
+  # sample_3codebooks:
+  #   repeats: 1

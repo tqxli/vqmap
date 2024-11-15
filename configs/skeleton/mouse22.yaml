@@ -1,0 +1,71 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: mouse22
+datadim: 3
+
+keypoints_init:
+  - EarL
+  - EarR
+  - Snout
+  - SpineF
+  - SpineM
+  - TailBase
+  - TailMid
+  - TailEnd
+  - ForepawL
+  - WristL
+  - ElbowL
+  - ShoulderL
+  - ForepawR
+  - WristR
+  - ElbowR
+  - ShoulderR
+  - HindpawL
+  - AnkleL
+  - KneeL
+  - HindpawR
+  - AnkleR
+  - KneeR
+
+keypoints:
+  - SpineM
+  - SpineF
+  - EarL
+  - EarR
+  - Snout
+  - TailBase
+  - ShoulderL
+  - ElbowL
+  - WristL
+  - ForepawL
+  - ShoulderR
+  - ElbowR
+  - WristR
+  - ForepawR
+  - KneeL
+  - AnkleL
+  - HindpawL
+  - KneeR
+  - AnkleR
+  - HindpawR
+
+center_keypoint: SpineM
+
+body_mapping:
+  Head: ['Snout', 'EarL', 'EarR']
+  Trunk: ['SpineF', 'SpineM', 'TailBase']
+  ForelimbL: ['ShoulderL', 'ElbowL', 'WristL', 'ForepawL']
+  ForelimbR: ['ShoulderR', 'ElbowR', 'WristR', 'ForepawR']
+  HindlimbL: ['KneeL', 'AnkleL', 'HindpawL']
+  HindlimbR: ['KneeR', 'AnkleR', 'HindpawR']
+
+kinematic_tree:
+  - ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout']
+  - ['SpineM', 'TailBase']
+  - ['SpineF', 'ShoulderL', 'ElbowL', 'WristL', 'ForepawL']
+  - ['SpineF', 'ShoulderR', 'ElbowR', 'WristR', 'ForepawR']
+  - ['TailBase', 'KneeL', 'AnkleL', 'HindpawL']
+  - ['TailBase', 'KneeR', 'AnkleR', 'HindpawR']
+
+anterior_keypoint: ['EarL', 'EarR']
+posterior_keypoint: TailBase
+align_direction: x

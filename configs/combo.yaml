@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - dataset@datasets.rat23: rat23
+  - dataset@datasets.mouse_demo: mouse_demo
+
+_target_: csbev.dataset.MultiDataset

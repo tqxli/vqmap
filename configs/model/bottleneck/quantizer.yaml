@@ -1,0 +1,6 @@
+_target_: csbev.model.quantizer.QuantizeEMAReset
+
+nb_code: 128
+code_dim: 64
+mu: 0.99
+beta: 0.25

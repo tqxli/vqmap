@@ -1,0 +1,14 @@
+_target_: csbev.model.quantizer.MixBottleneck
+
+code_dim: [32, 2]
+
+latent_vars:
+  discrete:
+    _target_: csbev.model.quantizer.QuantizeEMAReset
+    _partial_: true
+    mu: 0.99
+    beta: 0.25
+    nb_code: 8
+  continuous:
+    _target_: csbev.model.quantizer.VariationalBottleneck
+    _partial_: true

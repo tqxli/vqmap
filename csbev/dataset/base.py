@@ -1,0 +1,481 @@
+from __future__ import annotations
+from copy import deepcopy
+import os
+from typing import List, Literal
+import numpy as np
+from omegaconf import OmegaConf
+import torch
+from torch.utils.data import Dataset
+from tqdm import tqdm
+import scipy.io as sio
+from loguru import logger
+
+from csbev.dataset.skeleton import SkeletonProfile
+from csbev.dataset.ik import quaternion_to_cont6d_np
+from csbev.utils.loader import list_files_with_exts, _deeplabcut_loader, _name_from_path
+
+
+class BasePoseDataset(Dataset):
+    """Base dataset class for motion capture pose data.
+    """
+    def __init__(
+        self,
+        dataroot: list[str],
+        datapaths: None,
+        skeleton: SkeletonProfile,
+        name: str = "mocap",
+        dataset_type: str = "dannce_soc",
+        data_rep: Literal["xyz", "quat"] = "xyz",
+        alignment: Literal["lock_facing", "lock_all", "center_only"] = "lock_facing",
+        normalize: bool = False,
+        scale: float = 1.0,
+        seqlen: int = 128,
+        t_downsample: int = 1,
+        t_stride: int = 128,
+        t_jitter: int | None = None,
+    ):
+        self.dataroot = dataroot
+        self.datapaths = datapaths if datapaths is not None else dataroot
+
+        self.skeleton = skeleton
+        self.dataset_type = dataset_type
+        self.name = name
+
+        self.data_rep = data_rep
+        self.alignment = alignment
+        self.normalize = normalize
+        self.scale = scale
+
+        self.seqlen = seqlen
+        self.t_downsample = t_downsample
+        self.t_stride = t_stride
+        self.t_jitter = t_jitter is not None
+        self.t_jitter_range = t_jitter
+
+        self._load_data()
+
+    def _load(self, dp):
+        data = sio.loadmat(dp)["pred"]
+        
+        data = np.squeeze(data)
+        
+        data = np.transpose(data, (0, 2, 1))
+        assert data.shape[-1] == 3
+        self.raw_num_frames += len(data)
+        return data
+
+    def _scale(self, data: np.ndarray):
+        return data[:: self.t_downsample] * self.scale
+
+    def _trim(self, data: np.ndarray):
+        num_frames = data.shape[0]
+        max_chunks = num_frames // self.seqlen
+        keep_len = max_chunks * self.seqlen
+
+        data = data[:keep_len]
+        return data
+
+    def _normalize(self, data: np.ndarray):
+        if self.data_rep != "xyz" or not self.normalize:
+            return data
+
+        data = (data - data.min()) / (data.max() - data.min())
+        data = 2 * (data - 0.5)
+        return data
+
+    def _align(self, joints3D: np.ndarray):
+        if not self.alignment:
+            return joints3D
+
+        aligned = np.zeros(
+            (joints3D.shape[0], self.skeleton.n_keypoints, self.skeleton.datadim)
+        )
+        for i, seq in enumerate(joints3D.reshape(-1, self.seqlen, *joints3D.shape[1:])):
+            aligned[i * self.seqlen : (i + 1) * self.seqlen] = self.skeleton.align_pose(
+                seq, alignment=self.alignment
+            )
+
+        return aligned
+
+    def _convert(self, kind: Literal["xyz", "angles"], joints3D: np.ndarray):
+        if kind in ["xyz", "angles"]:
+            return joints3D
+
+        num_timepoints, num_joints = joints3D.shape[:2]
+        cont6d_joints3D = np.zeros((num_timepoints, num_joints, 6))
+        quat_joints3D = np.zeros((num_timepoints, num_joints, 4))
+        for i, seq in enumerate(
+            tqdm(
+                joints3D.reshape(-1, self.seqlen, *joints3D.shape[1:]),
+                desc="Conversion",
+            )
+        ):
+            quat = self.skeleton.inverse_kinematics(seq)
+            cont6d = quaternion_to_cont6d_np(quat)
+
+            quat_joints3D[i * self.seqlen : (i + 1) * self.seqlen] = quat
+            cont6d_joints3D[i * self.seqlen : (i + 1) * self.seqlen] = cont6d
+
+        data = quat_joints3D if kind == "quat" else cont6d
+        return data
+
+    def _process_data(self, data: np.ndarray):
+        data = self._scale(data)
+        data = self._trim(data)
+        data = self._align(data)
+        data = self._normalize(data)
+        data = self._convert(self.data_rep, data)
+        return data
+
+    def _load_data(self):
+        self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
+
+        for dp in tqdm(self.datapaths, desc="Preprocess"):
+            data = self._load(dp)
+            data = self._process_data(data)
+            self.pose3d.append(data)
+            self.num_frames.append(data.shape[0])
+
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
+        self.pose_dim = self.pose3d.shape[-1]
+
+    def __len__(self):
+        return (sum(self.num_frames) - self.seqlen) // self.t_stride + 1
+
+    def __getitem__(self, index):
+        start = index * self.t_stride
+        end = start + self.seqlen
+
+        jitter = (
+            np.random.choice(
+                np.arange(-self.t_jitter_range, self.t_jitter_range + 1), size=1,
+            )
+            if self.t_jitter
+            else 0
+        )
+
+        start = max(0, start + jitter)
+        end = min(len(self.pose3d), end + jitter)
+
+        motion = self.pose3d[start:end]
+
+        be = self.skeleton.body_region_indices
+
+        sample = {"x": motion, "be": torch.from_numpy(be).long()}
+
+        return sample
+
+
+class SimpleCompiledPoseDataset(BasePoseDataset):
+    """A single data file containing all mocap data as a Dict[expname, np.ndarray].
+    """
+
+    def _load_data(self):
+        predictions = np.load(self.dataroot, allow_pickle=True)[()]
+        self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
+
+        for dp in tqdm(self.datapaths, desc="Preprocess"):
+            data = predictions[dp]
+            self.raw_num_frames += len(data)
+            data = self._process_data(data)
+            self.pose3d.append(data)
+            self.num_frames.append(data.shape[0])
+
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
+        self.pose_dim = self.pose3d.shape[-1]
+
+
+class Topdown2DPoseDataset(SimpleCompiledPoseDataset):
+    """Synthesize 2D pose data from an existing 3D pose dataset.
+    """
+    def __init__(self, keypoints_remove: List[str], *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.keypoints_remove = keypoints_remove
+        keypoints_keep = [k for k in self.skeleton.keypoints if k not in self.keypoints_remove]
+        self.keypoints_keep_indices = np.array([self.skeleton.keypoints.index(k) for k in keypoints_keep])
+        self.skeleton.n_keypoints = len(keypoints_keep)
+        self.skeleton.datadim = 2
+        self.skeleton.keypoints = [self.skeleton.keypoints[idx] for idx in self.keypoints_keep_indices]
+
+        body_region_indices = []
+        for keypoint in self.skeleton.keypoints:
+            for region, kpts in self.skeleton.body_mapping.items():
+                if keypoint in kpts:
+                    body_region_indices.append(self.skeleton.body_regions.index(region))
+        self.skeleton.body_region_indices = np.array(body_region_indices)
+        
+        # fix kinematic tree for visualization
+        kinematic_tree = self.skeleton.kinematic_tree
+        if kinematic_tree is not None:
+            for idx, chain in enumerate(kinematic_tree):
+                kinematic_tree[idx] = [k for k in chain if k not in self.keypoints_remove]
+            kinematic_tree_indices = [
+                [self.skeleton.keypoints.index(kpt) for kpt in chain] for chain in kinematic_tree
+            ]
+        self.skeleton.kinematic_tree = kinematic_tree
+        self.skeleton.kinematic_tree_indices = kinematic_tree_indices   
+
+    def __getitem__(self, index):
+        batch = super().__getitem__(index)
+        batch["x"] = batch["x"][:, self.keypoints_keep_indices, :2]
+        batch["be"] = batch["be"]
+        return batch
+
+
+class CalMS21PoseDataset(SimpleCompiledPoseDataset):
+    def _process_data(self, data: np.ndarray):
+        data = self._scale(data)
+        data = self._trim(data)
+        data = data.reshape(-1, *data.shape[2:])
+        data = data.transpose((0, 2, 1))
+        data = self._align(data)
+        data = self._normalize(data)
+        return data
+
+    def _load_data(self):
+        labels = np.load(self.dataroot, allow_pickle=True)[()]['annotator-id_0']
+        sequence_names = sorted(list(labels.keys()))
+
+        self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
+        
+        for dp in tqdm(sequence_names, desc="Preprocess"):
+            data = labels[dp]["keypoints"] #[n_frames, 2-mice, 2, 7)]
+            data = self._process_data(data)
+            
+            if np.isnan(data).any():
+                continue
+
+            self.raw_num_frames += len(data)
+            self.pose3d.append(data)
+            self.num_frames.append(data.shape[0])
+        
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
+        self.pose_dim = self.pose3d.shape[-1]
+
+
+class MoSeqDLC2DDataset(SimpleCompiledPoseDataset):
+    def _load_data(self):
+        filepaths = list_files_with_exts(self.datapaths[0], [".h5", ".hdf5"])
+        
+        self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
+
+        for filepath in tqdm(filepaths, desc=f"Loading keypoints", ncols=72):
+            name = _name_from_path(
+                filepath, False, '-', True
+            )
+            new_coordinates, new_confidences, bodyparts = _deeplabcut_loader(
+                filepath, name
+            )
+            data = new_coordinates[name][:, 1:]
+            data = self._process_data(data)
+            if np.isnan(data).any():
+                continue
+
+            self.raw_num_frames += len(data)
+            self.pose3d.append(data)
+            self.num_frames.append(data.shape[0])
+        
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
+        self.pose_dim = self.pose3d.shape[-1]
+
+
+class RatActionDataset(SimpleCompiledPoseDataset):
+    def _load_action_data(self):
+        self.frame_mapping_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/classEmbedSave20230206.mat'
+        self.action_label_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/classEmbedSave20230206info.txt'
+        self.action_mapper = np.load(
+            "/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/coarse_behavior_mapper.npy", allow_pickle=True
+        )[()]
+        self.coarse_actions = ['idle', 'sniff/head', 'groom', 'scrunched', 'crouched', 'reared', 'explore', 'locomotion', 'error']
+        self.action_id_mapper = {action: idx for idx, action in enumerate(self.coarse_actions)}
+        
+        self.group = list(np.arange(70, 100))
+        
+        mappings = sio.loadmat(self.frame_mapping_path)
+
+        foldernames = [
+            fn[0][0].split('dannce_rig/')[-1].split('/SDANNCE')[0]
+            for idx, fn in enumerate(mappings['FN']) if idx in self.group
+        ]
+
+        cluster_indexes = [
+            fn[0][:, 0]
+            for idx, fn in enumerate(mappings['ratCZN_lone']) if idx in self.group
+        ]
+        mapdict = {fn.split('/')[-1]: c for fn, c in zip(foldernames, cluster_indexes)}
+        return mapdict
+    
+    def _load_data(self):
+        predictions = np.load(self.dataroot, allow_pickle=True)[()]
+        
+        action_data = self._load_action_data()
+        
+        self.pose3d, self.num_frames = [], []
+        self.actions = []
+        self.raw_num_frames = 0
+
+        for dp in tqdm(self.datapaths, desc="Preprocess"):
+            data = predictions[dp]
+            self.raw_num_frames += len(data)
+            data = self._process_data(data)
+            self.pose3d.append(data)
+            self.num_frames.append(data.shape[0])
+            
+            action_labels = action_data[dp]
+            action_labels = self._trim(action_labels)
+            action_labels_coarse = [
+                self.action_id_mapper[self.action_mapper[label]]
+                for label in action_labels
+            ]
+            
+            self.actions.append(action_labels_coarse)
+
+        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
+        self.pose_dim = self.pose3d.shape[-1]
+
+        self.actions = torch.from_numpy(np.concatenate(self.actions)).long()
+    
+    def __getitem__(self, index):
+        start = index * self.t_stride
+        end = start + self.seqlen
+
+        motion = self.pose3d[start:end].flatten(1, 2)
+        action = self.actions[start:end]
+
+        be = self.skeleton.body_region_indices
+
+        sample = {"x": motion, "be": torch.from_numpy(be).long(), "action": action}
+
+        return sample
+
+
+class MouseActionDataset(RatActionDataset):
+    def _load_action_data(self):
+        self.coarse_actions = ['idle', 'sniff/head', 'groom', 'scrunched', 'crouched', 'reared', 'explore', 'locomotion', 'error']
+        self.action_id_mapper = {action: idx for idx, action in enumerate(self.coarse_actions)}
+        self.action_mapper = np.load(
+            "/media/mynewdrive/datasets/dannce/social_rat/clustering/mouse/coarse_behavior_mapper.npy", allow_pickle=True
+        )[()]
+        
+        embedding_info_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/mouse/mouse_embedding_info.mat'
+        embedding_info = sio.loadmat(embedding_info_path)
+        exp_names = [file[0][0].split('\\')[-1] for file in embedding_info['allMOUSEL_files']]
+        frame_mappings = embedding_info['wrFINE']
+        frame_mappings = np.stack([mappings[0][:, 0] for mappings in frame_mappings], axis=0)[:len(exp_names)]
+
+        mapdict = {
+            expname: embeddings
+            for expname, embeddings in zip(exp_names, frame_mappings)
+        }
+        return mapdict
+
+
+class RatActionLatentDataset(RatActionDataset):
+    def __init__(self, model_root: str, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.model_root = model_root
+        self.embedding_path = os.path.join(self.model_root, "analysis/embeddings/rat23.pt")
+        self.checkpoint_path = os.path.join(self.model_root, "checkpoints/model.pth")
+        assert os.path.exists(self.model_root), f"Model root {self.model_root} does not exist."
+        assert os.path.exists(self.embedding_path), f"Embedding file does not exist in {self.model_root}."
+        assert os.path.exists(self.checkpoint_path), f"Checkpoint file does not exist in {self.model_root}."
+        
+        self.embeddings = torch.load(self.embedding_path)
+        datapaths_all = sorted(list(np.load(self.dataroot, allow_pickle=True)[()].keys()))
+        indices = torch.Tensor([datapaths_all.index(dp) for dp in self.datapaths]).long()
+        self.embeddings = self.embeddings.reshape(len(datapaths_all), -1, *self.embeddings.shape[1:])
+        self.embeddings = self.embeddings[indices]
+        self.embeddings = self.embeddings.flatten(0,1)
+
+        ckpt = torch.load(self.checkpoint_path)
+        self.ds = ds = 2 ** ckpt["config"].model.encoder.channel_encoder.n_ds
+        breakpoint()
+        self.codebooks = [v for k, v in ckpt["model"].items() if "codebook" in k]
+
+        assert self.embeddings.shape[0] * ds == self.pose3d.shape[0]
+
+    def __getitem__(self, index):
+        sample = super().__getitem__(index)
+        
+        start = index * self.t_stride // self.ds
+        end = start + self.seqlen // self.ds
+        
+        codes = self.embeddings[start:end].long()
+        codes = codes.unsqueeze(1).repeat(1,self.ds,1).flatten(0,1)
+        latent = torch.cat([self.codebooks[0][codes[:, 0]], self.codebooks[1][codes[:, 1]]], dim=-1)
+        sample["latent"] = latent
+        sample["codes"] = codes
+        return sample
+
+
+if __name__ == "__main__":
+    from hydra import initialize, compose
+    from hydra.utils import instantiate
+
+    # with initialize(config_path="../../configs", version_base=None):
+    #     cfg = compose(config_name="dataset/mouse44.yaml").dataset
+    #     del cfg.split
+    #     # print(cfg)
+    #     dataset = instantiate(cfg)
+    # sample = dataset[0]
+    # print(sample["x"].shape)
+
+    with initialize(config_path="../../configs", version_base=None):
+        cfg = compose(config_name="dataset/mouse23.yaml").dataset
+        del cfg.split
+    cfg['_target_'] = 'csbev.dataset.base.MouseActionDataset'
+    cfg.datapaths = sorted(list(np.load(cfg.dataroot, allow_pickle=True)[()].keys()))
+    cfg.datapaths = cfg.datapaths[:1]
+    cfg = {k: v for k, v in cfg.items()}
+    # cfg["model_root"] = '/home/tianqingli/dl-projects/duke-cluster/tqxli/experiments/vqmap2/rat23+mouse_demo+mouse23/ChannelInvariantEncoder_enc3_s2_hd256_oc32_depth3_dilation3_nh4_nq6_dec3_s2_hd256_od128_depth3_quantizer_cb12+12_dim32+32_reconsskewed_mse_lraug1.0loss0.001_delay1500_lraug_naive0.0_kptdrop0.2_3_lr0.0001'
+    dataset = instantiate(cfg)
+    sample = dataset[0]
+    for k, v in sample.items():
+        print(k, v.shape)
+    
+    # from csbev.dataset.loader import filter_by_keys
+    # with initialize(config_path="../../configs", version_base=None):
+    #     cfg = compose(config_name="dataset/mouse_demo_2d.yaml").dataset
+    #     del cfg.split
+    # cfg["_target_"] = "csbev.dataset.base.Topdown2DPoseDataset"
+
+    # datapaths = sorted(list(np.load(cfg.dataroot, allow_pickle=True)[()].keys()))
+    # test_ids = ["m6"]
+    # cfg_test = deepcopy(cfg)
+    # cfg_test.datapaths = [datapaths[idx] for idx in filter_by_keys(test_ids, datapaths)]
+    # cfg_test = {k: v for k, v in cfg_test.items()}
+  
+    # keypoints_remove = [
+    #     "ElbowL", "WristL",
+    #     "ElbowR", "WristR",
+    #     "KneeL", "AnkleL", "FootL",
+    #     "KneeR", "AnkleR", "FootR",
+    # ]
+    # cfg_test["keypoints_remove"] = keypoints_remove
+    
+    # dataset = instantiate(cfg_test)
+    # sample = dataset[0]
+    # for k, v in sample.items():
+    #     print(k, v.shape)
+    
+    # print(dataset.skeleton.kinematic_tree_indices)
+
+    # with initialize(config_path="../../configs", version_base=None):
+    #     cfg = compose(config_name="dataset/mouse_moseq_2d.yaml").dataset
+    #     del cfg.split
+    # dataset = instantiate(cfg)
+    # sample = dataset[0]
+    # for k, v in sample.items():
+    #     print(k, v.shape)
+    # print(sample['be'])

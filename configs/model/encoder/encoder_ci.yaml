@@ -1,0 +1,21 @@
+_target_: csbev.model.encoder.ChannelInvariantEncoder
+
+# Encoder that embeds each keypoint's trajectory independently
+channel_encoder:
+  _target_: csbev.model.encoder.Conv1DEncoder
+  in_channels: 3
+  out_channels: 32
+  hidden_dim: 256
+  n_ds: 3
+  strides: 2
+  depth: 3
+  dilation: 3
+  activation: relu
+  normalization: LN
+  out_kernel_size: 3
+
+num_heads: 4
+query_size: 6
+latent_dim: 64
+
+use_be: true
