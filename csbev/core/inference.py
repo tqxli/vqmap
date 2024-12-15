@@ -49,6 +49,7 @@ class InferenceHelper:
 
         self.model = model
         self.model.eval()
+        self.is_ci_model = hasattr(self.model.encoder, "channel_encoder")
 
         self.device = device
 
@@ -295,7 +296,9 @@ class InferenceHelper:
                 skeleton.n_keypoints
             ]:
                 tests[f"RandPerm{num_keep}"] = joints_perm[:num_keep]
-                
+            
+            tests["Original"] = np.arange(skeleton.n_keypoints)
+            
             connectivity = torch.Tensor(skeleton.connectivity).long()
 
             benchmark_metrics = {}
@@ -304,7 +307,7 @@ class InferenceHelper:
 
                 # reconstruct keypoint subsets
                 for testname, keep_indices in tests.items():
-                    batch_masked = self._mask_keypoints(batch, keep_indices)
+                    batch_masked = self._mask_keypoints(batch, keep_indices) if self.is_ci_model else self._zero_out_keypoints(batch, keep_indices)
                     batch_masked["tag_in"] = batch_masked["tag_out"] = tag
                     out = self.model.reconstruct(batch_masked)
                     out = out.detach().cpu()
@@ -318,8 +321,17 @@ class InferenceHelper:
                 # reconstruct synthetic poses from averaging
                 batch_syn = deepcopy(batch)
                 batch_syn["x"] = batch_syn["x"][:, :, connectivity].mean(dim=-2)
+                # pad if not CI model
+                if not self.is_ci_model:
+                    n_pad = skeleton.n_keypoints - batch_syn["x"].shape[2]
+                    batch_syn["x"] = torch.cat((
+                        torch.zeros_like(batch_syn["x"][:, :, :n_pad]),
+                        batch_syn["x"],
+                    ), dim=2)
+                
                 batch_syn["be"] = torch.max(batch_syn["be"][:, connectivity], dim=-1).values
                 batch_syn["tag_in"] = batch_syn["tag_out"] = tag
+                
                 out = self.model.reconstruct(batch_syn)
                 out = out.detach().cpu()
                 mpjpe = compute_mpjpe(
@@ -390,6 +402,13 @@ class InferenceHelper:
         }
         return batch_masked
 
+    def _zero_out_keypoints(self, batch: Dict, keep_indices: List[int]):
+        n_keypoints = batch["x"].shape[2]
+        mask_indices = np.array(list(set(range(n_keypoints)) - set(keep_indices)))
+        batch_masked = deepcopy(batch)
+        batch_masked["x"][:, :, mask_indices] = 0
+        return batch_masked
+        
     def aug_behavior(self, batch: Dict[str, torch.Tensor]):
         batch_aug = {
             "x": deepcopy(batch["x"]),
