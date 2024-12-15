@@ -49,6 +49,16 @@ class BaseTrainer:
         self.model.to(self.device)
         
         self.n_iters = 0
+        self.cur_epochs = 0
+        
+        # alternating optimization
+        self.alternating_optim = cfg.train.get("alternating_optim", None)
+        if self.alternating_optim is not None:
+            start_epoch = self.alternating_optim.get("start_epoch", 0)
+            episode = self.alternating_optim.get("episode", 25)
+            self.on_epochs = list(np.arange(start_epoch, self.n_epochs, episode))
+        else:
+            self.on_epochs = np.arange(self.n_epochs)
 
     def set_optimizer(self, model, optimizer_fn):
         model_parameters = [p for p in model.parameters() if p.requires_grad]
@@ -116,6 +126,9 @@ class BaseTrainer:
         
         self.n_iters += 1
         self.model.cur_iters = self.n_iters
+        
+        self.cur_epochs += 1
+        self.model.cur_epochss = self.cur_epochs
 
         return out, loss, loss_dict
 
@@ -127,6 +140,8 @@ class BaseTrainer:
     def train_epoch(
         self, train_loader, cur_epoch: int,
     ):
+        self.model.train()
+        
         tot_losses = 0
         train_losses = 0
         total_num_samples = 0

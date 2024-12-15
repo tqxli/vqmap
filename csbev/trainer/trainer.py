@@ -80,7 +80,8 @@ class TrainerMultiLoader(BaseTrainer):
     def train_epoch(
         self, train_loader: Dict[str, DataLoader], cur_epoch: int,
     ):
-        self.model.train()
+        if cur_epoch in self.on_epochs:
+            self.model.train()
         
         tot_losses = 0
         train_losses = 0

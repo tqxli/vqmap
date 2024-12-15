@@ -157,6 +157,7 @@ class SeqVAE(nn.Module):
         # )
         
         self.cur_iters = 0
+        self.cur_epochs = 0
 
     def _bottleneck(self, latent: torch.Tensor):
         if self.bottleneck is None:
