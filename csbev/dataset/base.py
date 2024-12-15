@@ -339,6 +339,8 @@ class MoSeqDLC2DDataset(SimpleCompiledPoseDataset):
 
 class RatActionDataset(SimpleCompiledPoseDataset):
     def _load_action_data(self):
+        self.dataset_name = "rat23"
+        
         self.frame_mapping_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/classEmbedSave20230206.mat'
         self.action_label_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/classEmbedSave20230206info.txt'
         self.action_mapper = np.load(
@@ -403,13 +405,15 @@ class RatActionDataset(SimpleCompiledPoseDataset):
 
         be = self.skeleton.body_region_indices
 
-        sample = {"x": motion, "be": torch.from_numpy(be).long(), "action": action}
+        sample = {"x": motion, "be": torch.from_numpy(be).long(), "action": action, "tag_in": self.dataset_name, "tag_out": self.dataset_name}
 
         return sample
 
 
 class MouseActionDataset(RatActionDataset):
     def _load_action_data(self):
+        self.dataset_name = "mouse23"
+        
         self.coarse_actions = ['idle', 'sniff/head', 'groom', 'scrunched', 'crouched', 'reared', 'explore', 'locomotion', 'error']
         self.action_id_mapper = {action: idx for idx, action in enumerate(self.coarse_actions)}
         self.action_mapper = np.load(
