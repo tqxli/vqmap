@@ -95,4 +95,6 @@ def skeleton_scaling(batch: Dict[str, torch.Tensor], scale_factor: float = 0.2):
     
     scale = np.random.uniform(1 - scale_factor, 1 + scale_factor)
     batch_aug["x"] *= scale
+    batch_aug["y"] *= scale
+    batch_aug["scale"] = scale
     return batch_aug

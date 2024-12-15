@@ -17,7 +17,7 @@ from csbev.trainer.base import BaseTrainer
 from csbev.utils.visualization import make_pose_seq_overlay
 from csbev.utils.run import move_data_to_device
 from csbev.utils.metrics import compute_mpjpe
-from csbev.utils.augmentation import lr_flip, keypoints_dropout, lr_flip_naive
+from csbev.utils.augmentation import lr_flip, keypoints_dropout, lr_flip_naive, skeleton_scaling
 
 
 class TrainerMultiLoader(BaseTrainer):
@@ -40,6 +40,11 @@ class TrainerMultiLoader(BaseTrainer):
         if random.random() < self.cfg_aug.get("kpt_dropout_prob", 0.0):
             max_parts = self.cfg.train.augmentation.get("kpt_dropout_max_parts", 3)
             return keypoints_dropout(batch, max_parts=max_parts)
+
+        if random.random() < self.cfg_aug.get("skeleton_scaling_prob", 0.0):
+            scale_factor = self.cfg.train.augmentation.get("skeleton_scaling_factor", 0.5)
+            assert scale_factor > 0.0 and scale_factor < 1.0
+            return skeleton_scaling(batch, scale_factor=scale_factor)
 
         return batch
 
