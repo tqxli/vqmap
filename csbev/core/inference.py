@@ -157,15 +157,25 @@ class InferenceHelper:
             fig = plt.figure(figsize=(w * 2, h * 2), dpi=200)
 
             for idx, combo in enumerate(combos):
-                if self.skeletons[tag].datadim == 2:
+                is_2d = self.skeletons[tag].datadim == 2 or '_2d' in tag
+                
+                if is_2d:
                     ax = fig.add_subplot(h, w, idx + 1)
                 elif self.skeletons[tag].datadim == 3:
                     ax = fig.add_subplot(h, w, idx + 1, projection="3d")
+                
                 ax.set_title(f"{combo}")
                 poseseq = traj[idx].reshape(
                     self.skeletons[tag].n_keypoints, self.skeletons[tag].datadim, -1
                 )
                 poseseq = poseseq.permute(2, 0, 1).detach().cpu().numpy()
+                if is_2d and poseseq.shape[2] == 3:
+                    poseseq = poseseq[..., :2]
+
+                if is_2d:
+                    coord_limits = 1.8
+                elif self.skeletons[tag].datadim == 3:
+                    coord_limits = 0.8 / (self.dataset_scales[tag] * 100)
 
                 ax = make_pose_seq_overlay(
                     poseseq=poseseq,
@@ -174,7 +184,7 @@ class InferenceHelper:
                     alpha_min=0.2,
                     linewidth=1.0,
                     marker_size=20,
-                    coord_limits=0.8 if self.skeletons[tag].datadim == 3 else 1.8,
+                    coord_limits=coord_limits,
                     ax=ax,
                     savename=None,
                 )
@@ -263,6 +273,7 @@ class InferenceHelper:
                 outputs,
                 skeleton_input=self.skeletons[dataset_name],
                 skeleton_output=skeletons_out,
+                input_name=dataset_name,
                 output_names=self.output_tags,
                 savedir=savedir,
                 video_name=f"reconstruction_{dataset_name}.mp4",
@@ -387,6 +398,18 @@ class InferenceHelper:
         batch_aug["x"][..., 1] = -batch_aug["x"][..., 1]
         return batch_aug
 
+    def _process_skeleton_info(self, skeleton: SkeletonProfile, inputs: np.ndarray, dataset_name):
+        is_2d = skeleton.datadim == 2 or "_2d" in dataset_name
+        if is_2d:
+            coord_limits = 2.8
+        elif skeleton.datadim == 3:
+            coord_limits = 0.8 if "rat" in dataset_name else 0.4
+        
+        if is_2d and inputs.shape[-1] == 3:
+            inputs = inputs[..., :2]
+        
+        return inputs, coord_limits, is_2d
+
     def make_video(
         self,
         n_samples: int,
@@ -394,28 +417,42 @@ class InferenceHelper:
         outputs: List[np.ndarray],
         skeleton_input: SkeletonProfile,
         skeleton_output: SkeletonProfile,
+        input_name: str,
         output_names: List[str],
         savedir: str,
         video_name: str = "reconstruction.mp4",
         fps: int = 50,
     ):
+        inputs, coord_limits_input, is_2d_input = self._process_skeleton_info(skeleton_input, inputs, input_name)
+        
+        coord_limits_outputs, is_2d_outputs = [], []
+        _outputs = []
+        for i, so in enumerate(skeleton_output):
+            o, coord_limits_output, is_2d_output = self._process_skeleton_info(so, outputs[i], output_names[i])
+            coord_limits_outputs.append(coord_limits_output)
+            is_2d_outputs.append(is_2d_output)
+            _outputs.append(o)
+        outputs = _outputs
+        
         plot_args = {
             "linewidth": 1.0,
             "marker_size": 20,
-            "coord_limits": 0.8 if skeleton_input.datadim == 3 else 1.8,
             "alpha": 1.0,
         }
         n_rows = len(outputs) + 1
         fig = plt.figure(figsize=(2 * n_samples, 2 * n_rows), dpi=200)
         ax_input = [
-            fig.add_subplot(n_rows, n_samples, idx + 1, projection="3d") if skeleton_input.datadim == 3 else fig.add_subplot(n_rows, n_samples, idx+1)
+            fig.add_subplot(n_rows, n_samples, idx + 1, projection="3d")
+            if not is_2d_input
+            else fig.add_subplot(n_rows, n_samples, idx+1)
             for idx in range(n_samples)
         ]
         ax_recon = [
             [
                 fig.add_subplot(
                     n_rows, n_samples, n_samples * (i + 1) + idx + 1, projection="3d"
-                ) if skeleton_output[i].datadim == 3 else fig.add_subplot(n_rows, n_samples, n_samples * (i + 1) + idx + 1)
+                ) if not is_2d_outputs[i]
+                else fig.add_subplot(n_rows, n_samples, n_samples * (i + 1) + idx + 1)
                 for idx in range(n_samples)
             ]
             for i in range(len(outputs))
@@ -428,6 +465,7 @@ class InferenceHelper:
                     pose=inputs[idx][i],
                     skeleton=skeleton_input,
                     ax=ax_input[idx],
+                    coord_limits=coord_limits_input,
                     **plot_args,
                 )
                 ax_input[idx].set_title("Input")
@@ -438,6 +476,7 @@ class InferenceHelper:
                         pose=outputs[row][idx][i],
                         skeleton=skeleton_output[row],
                         ax=ax_recon[row][idx],
+                        coord_limits=coord_limits_outputs[row],
                         **plot_args,
                     )
                     ax_recon[row][idx].set_title(f"->{output_names[row]}")

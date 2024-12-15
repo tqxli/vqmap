@@ -16,6 +16,7 @@ seqlen: 128
 t_downsample: 2
 
 keypoints_remove: ["WristL", "ForepawL", "WristR", "ForepawR", "AnkleL", "HindpawL", "AnkleR", "HindpawR"]
+keep_z: false
 
 split:
   method: subject

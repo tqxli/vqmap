@@ -223,15 +223,18 @@ class Rat7MDataset(BasePoseDataset):
 class Topdown2DPoseDataset(SimpleCompiledPoseDataset):
     """Synthesize 2D pose data from an existing 3D pose dataset.
     """
-    def __init__(self, keypoints_remove: List[str], *args, **kwargs):
+    def __init__(self, keypoints_remove: List[str], keep_z: bool = False, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
         self.keypoints_remove = keypoints_remove
         keypoints_keep = [k for k in self.skeleton.keypoints if k not in self.keypoints_remove]
         self.keypoints_keep_indices = np.array([self.skeleton.keypoints.index(k) for k in keypoints_keep])
         self.skeleton.n_keypoints = len(keypoints_keep)
-        self.skeleton.datadim = 2
+        
+        self.keep_z = keep_z
+        self.skeleton.datadim = 2 if not self.keep_z else 3
         self.skeleton.keypoints = [self.skeleton.keypoints[idx] for idx in self.keypoints_keep_indices]
+        self.skeleton.skeleton_name += "_2d"
 
         body_region_indices = []
         for keypoint in self.skeleton.keypoints:
@@ -253,7 +256,11 @@ class Topdown2DPoseDataset(SimpleCompiledPoseDataset):
 
     def __getitem__(self, index):
         batch = super().__getitem__(index)
-        batch["x"] = batch["x"][:, self.keypoints_keep_indices, :2]
+        batch["x"] = batch["x"][:, self.keypoints_keep_indices]
+        if not self.keep_z:
+            batch["x"] = batch["x"][:, :, :2]
+        else:
+            batch["x"][:, :, 2] = 0
         batch["be"] = batch["be"]
         return batch
 
@@ -292,6 +299,16 @@ class CalMS21PoseDataset(SimpleCompiledPoseDataset):
 
 
 class MoSeqDLC2DDataset(SimpleCompiledPoseDataset):
+    def __init__(self, keep_z: bool = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        self.keep_z = keep_z
+        self.skeleton.datadim = 2 if not self.keep_z else 3
+
+        if self.keep_z:
+            self.pose3d = torch.cat([self.pose3d, torch.zeros(*self.pose3d.shape[:2], 1)], dim=-1)
+            logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
+
     def _load_data(self):
         filepaths = list_files_with_exts(self.datapaths[0], [".h5", ".hdf5"])
         
@@ -315,6 +332,7 @@ class MoSeqDLC2DDataset(SimpleCompiledPoseDataset):
             self.num_frames.append(data.shape[0])
         
         self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+        
         logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
         self.pose_dim = self.pose3d.shape[-1]
 

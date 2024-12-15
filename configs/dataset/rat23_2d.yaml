@@ -11,10 +11,11 @@ dataroot: /media/mynewdrive/datasets/dannce/social_rat/SCN2A_WK1/SCN2A_WK1.npy
 data_rep: xyz
 alignment: lock_facing
 normalize: false
-scale: 0.01
+scale: 0.02
 seqlen: 128
 
 keypoints_remove: ["ElbowL", "WristL", "ElbowR", "WristR", "KneeL", "AnkleL", "FootL", "KneeR", "AnkleR", "FootR"]
+keep_z: false
 
 split:
   method: subject
