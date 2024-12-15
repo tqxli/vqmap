@@ -1,0 +1,10 @@
+_target_: csbev.model.quantizer.MultiGroupQuantizer
+
+n_groups: 2
+codebook_size: [8, 16]
+code_dim: [32, 32]
+
+sub_quantizer:
+  _target_: csbev.model.quantizer.GumbelVectorQuantizer
+  _partial_: true
+  groups: 1

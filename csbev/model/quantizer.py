@@ -282,6 +282,216 @@ class QuantizeEMAReset(nn.Module):
         return x_d, loss, (perplexity, code_idx)
 
 
+class GumbelVectorQuantizer(nn.Module):
+    """
+    https://github.com/facebookresearch/fairseq/blob/main/fairseq/modules/gumbel_vector_quantizer.py
+    """
+    def __init__(
+        self,
+        nb_code,
+        code_dim,
+        input_dim=None,
+        temp=(2, 0.5, 0.999995),
+        time_first=False,
+        groups=1,
+        combine_groups=True,
+        activation=nn.GELU(),
+        weight_proj_depth=1,
+        weight_proj_factor=1,
+        hard=True,
+        std=0,
+    ):
+        """Vector quantization using gumbel softmax
+
+        Args:
+            dim: input dimension (channels)
+            num_vars: number of quantized vectors per group
+            temp: temperature for training. this should be a tuple of 3 elements: (start, stop, decay factor)
+            groups: number of groups for vector quantization
+            combine_groups: whether to use the vectors for all groups
+            vq_dim: dimensionality of the resulting quantized vector
+            time_first: if true, expect input in BxTxC format, otherwise in BxCxT
+            activation: what activation to use (should be a module). this is only used if weight_proj_depth is > 1
+            weight_proj_depth: number of layers (with activation in between) to project input before computing logits
+            weight_proj_factor: this is used only if weight_proj_depth is > 1. scales the inner dimensionality of
+                                projections by this factor
+        """
+        super().__init__()
+
+        self.input_dim = input_dim if input_dim is not None else code_dim
+        self.groups = groups
+        self.combine_groups = combine_groups
+        self.nb_code = nb_code
+        self.time_first = time_first
+        self.hard = hard
+
+        assert (
+            code_dim % groups == 0
+        ), f"dim {code_dim} must be divisible by groups {groups} for concatenation"
+
+        var_dim = code_dim // groups
+        self.n_groups = num_groups = groups #if not combine_groups else 1
+
+        self.codebook = nn.Parameter(torch.FloatTensor(1, num_groups * nb_code, var_dim))
+        if std == 0:
+            nn.init.uniform_(self.codebook)
+        else:
+            nn.init.normal_(self.codebook, mean=0, std=std)
+
+        self.weight_proj_depth = weight_proj_depth
+        self.weight_proj_factor = weight_proj_factor
+        self.activation = activation
+
+        if weight_proj_depth > 1:
+
+            def block(input_dim, output_dim):
+                return nn.Sequential(nn.Linear(input_dim, output_dim), activation)
+
+            inner_dim = self.input_dim * weight_proj_factor
+            self.weight_proj = nn.Sequential(
+                *[
+                    block(self.input_dim if i == 0 else inner_dim, inner_dim)
+                    for i in range(weight_proj_depth - 1)
+                ],
+                nn.Linear(inner_dim, groups * nb_code),
+            )
+        else:
+            self.weight_proj = nn.Linear(self.input_dim, groups * nb_code)
+            nn.init.normal_(self.weight_proj.weight, mean=0, std=1)
+            nn.init.zeros_(self.weight_proj.bias)
+
+        if isinstance(temp, str):
+            import ast
+
+            temp = ast.literal_eval(temp)
+        assert len(temp) == 3, f"{temp}, {len(temp)}"
+
+        self.max_temp, self.min_temp, self.temp_decay = temp
+        self.curr_temp = self.max_temp
+        self.codebook_indices = None
+
+    def set_num_updates(self, num_updates):
+        self.curr_temp = max(
+            self.max_temp * self.temp_decay**num_updates, self.min_temp
+        )
+
+    def get_codebook_indices(self):
+        if self.codebook_indices is None:
+            from itertools import product
+
+            p = [range(self.num_codes)] * self.groups
+            inds = list(product(*p))
+            self.codebook_indices = torch.tensor(
+                inds, dtype=torch.long, device=self.codebook.device
+            ).flatten()
+
+            if not self.combine_groups:
+                self.codebook_indices = self.codebook_indices.view(
+                    self.num_codes**self.groups, -1
+                )
+                for b in range(1, self.groups):
+                    self.codebook_indices[:, b] += self.num_codes * b
+                self.codebook_indices = self.codebook_indices.flatten()
+        return self.codebook_indices
+
+    # def codebook(self):
+    #     indices = self.get_codebook_indices()
+    #     return (
+    #         self.codebook.squeeze(0)
+    #         .index_select(0, indices)
+    #         .view(self.num_codes**self.groups, -1)
+    #     )
+
+    def sample_from_codebook(self, b, n):
+        indices = self.get_codebook_indices()
+        indices = indices.view(-1, self.groups)
+        cb_size = indices.size(0)
+        assert (
+            n < cb_size
+        ), f"sample size {n} is greater than size of codebook {cb_size}"
+        sample_idx = torch.randint(low=0, high=cb_size, size=(b * n,))
+        indices = indices[sample_idx]
+
+        z = self.codebook.squeeze(0).index_select(0, indices.flatten()).view(b, n, -1)
+        return z
+
+    def to_codebook_index(self, indices):
+        res = indices.new_full(indices.shape[:-1], 0)
+        for i in range(self.groups):
+            exponent = self.groups - i - 1
+            res += indices[..., i] * (self.num_codes**exponent)
+        return res
+
+    def forward_idx(self, x):
+        res = self.forward(x, produce_targets=True)
+        return res["x"], res["targets"]
+
+    def forward(self, x, produce_targets=False):
+        result = {"num_vars": self.nb_code * self.n_groups}
+        
+        bsz, fsz, tsz = x.shape
+        x = x.transpose(1, 2)  # BTC -> BCT 
+
+        x = x.reshape(-1, fsz)
+        x = self.weight_proj(x)
+        x = x.view(bsz * tsz * self.groups, -1)
+
+        with torch.no_grad():
+            _, k = x.max(-1)
+            hard_x = (
+                x.new_zeros(*x.shape)
+                .scatter_(-1, k.view(-1, 1), 1.0)
+                .view(bsz * tsz, self.groups, -1)
+            )
+            hard_probs = torch.mean(hard_x.float(), dim=0)
+            result["code_perplexity"] = torch.exp(
+                -torch.sum(hard_probs * torch.log(hard_probs + 1e-7), dim=-1)
+            ).sum()
+
+        avg_probs = torch.softmax(
+            x.view(bsz * tsz, self.groups, -1).float(), dim=-1
+        ).mean(dim=0)
+        result["prob_perplexity"] = torch.exp(
+            -torch.sum(avg_probs * torch.log(avg_probs + 1e-7), dim=-1)
+        ).sum()
+
+        result["temp"] = self.curr_temp
+
+        if self.training:
+            x = F.gumbel_softmax(x.float(), tau=self.curr_temp, hard=self.hard).type_as(
+                x
+            )
+        else:
+            x = hard_x
+
+        x = x.view(bsz * tsz, -1)
+
+        vars = self.codebook
+        if self.combine_groups:
+            vars = vars.repeat(1, self.groups, 1)
+
+        if produce_targets:
+            result["targets"] = (
+                x.view(bsz * tsz * self.groups, -1)
+                .argmax(dim=-1)
+                .view(bsz, tsz, self.groups)
+                .detach()
+            )
+
+        x = x.unsqueeze(-1) * vars
+        x = x.view(bsz * tsz, self.groups, self.nb_code, -1)
+        x = x.sum(-2)
+        x = x.view(bsz, tsz, -1)
+
+        x = x.transpose(1, 2)  # BTC -> BCT
+
+        emb_loss = {
+            "code_penality": (result["num_vars"]-result["prob_perplexity"]) / result["num_vars"]
+        }
+
+        return x, emb_loss, result
+
+
 class MultiGroupQuantizer(nn.Module):
     def __init__(
         self,
@@ -316,6 +526,11 @@ class MultiGroupQuantizer(nn.Module):
                 sub_quantizer(code_dim=self.code_dim[i], nb_code=codebook_size[i])
             )
         self.sub_quantizers = nn.ModuleList(sub_quantizers)
+
+    def set_num_updates(self, num_updates):
+        for sub_quantizer in self.sub_quantizers:
+            if hasattr(sub_quantizer, "set_num_updates"):
+                sub_quantizer.set_num_updates(num_updates)
 
     def get_codevecs(self):
         combinations = product(*[range(nb_code) for nb_code in self.codebook_size])
@@ -436,7 +651,7 @@ class MixBottleneckv2(nn.Module):
         
         loss = {**loss_dis, **loss_cont}
         return z, loss, info_dis
-
+        
 
 if __name__ == "__main__":
     from hydra import initialize, compose
