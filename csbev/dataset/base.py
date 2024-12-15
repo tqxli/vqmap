@@ -189,6 +189,37 @@ class SimpleCompiledPoseDataset(BasePoseDataset):
         self.pose_dim = self.pose3d.shape[-1]
 
 
+class Rat7MDataset(BasePoseDataset):
+    def _load(self, dp):
+        data = sio.loadmat(dp)
+        data = data["mocap"][0][0]
+        data = np.stack(data, axis=1)
+        assert data.shape[-1] == 3
+        self.raw_num_frames += len(data)
+        return data
+
+    def _interp_nan(self, data: np.ndarray):
+        nans = np.isnan(data)
+        fcn = lambda z: z.nonzero()[0]
+        for joint_idx in range(data.shape[1]):
+            for coord_idx in range(data.shape[2]):
+                data[nans[:, joint_idx, coord_idx], joint_idx, coord_idx] = np.interp(
+                    fcn(nans[:, joint_idx, coord_idx]),
+                    fcn(~nans[:, joint_idx, coord_idx]),
+                    data[~nans[:, joint_idx, coord_idx], joint_idx, coord_idx],
+                )
+        return data
+
+    def _process_data(self, data: np.ndarray):
+        data = self._scale(data)
+        data = self._trim(data)
+        data = self._interp_nan(data)
+        data = self._align(data)
+        data = self._normalize(data)
+        data = self._convert(self.data_rep, data)
+        return data
+
+
 class Topdown2DPoseDataset(SimpleCompiledPoseDataset):
     """Synthesize 2D pose data from an existing 3D pose dataset.
     """

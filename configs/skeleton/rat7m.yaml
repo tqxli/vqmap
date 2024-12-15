@@ -1,0 +1,69 @@
+_target_: csbev.dataset.skeleton.SkeletonProfile
+skeleton_name: rat7m
+datadim: 3
+
+keypoints_init:
+  - HeadF
+  - HeadB
+  - HeadL
+  - SpineF
+  - SpineM
+  - SpineL
+  - Offset1
+  - Offset2
+  - HipL
+  - HipR
+  - ElbowL
+  - ArmL
+  - ShoulderL
+  - ShoulderR
+  - ElbowR
+  - ArmR
+  - KneeR
+  - KneeL
+  - ShinL
+  - ShinR
+
+keypoints:
+  - HeadF
+  - HeadB
+  - HeadL
+  - SpineF
+  - SpineM
+  - SpineL
+  - HipL
+  - HipR
+  - ElbowL
+  - ArmL
+  - ShoulderL
+  - ShoulderR
+  - ElbowR
+  - ArmR
+  - KneeR
+  - KneeL
+  - ShinL
+  - ShinR
+
+center_keypoint: SpineM
+
+anterior_keypoint:
+  - HeadF
+  - HeadB
+posterior_keypoint: SpineL
+align_direction: x
+
+body_mapping:
+  Head: ['HeadF', 'HeadB', 'HeadL']
+  Trunk: ['SpineF', 'SpineM', 'SpineL']
+  ForelimbL: ['ShoulderL', 'ElbowL', 'ArmL']
+  ForelimbR: ['ShoulderR', 'ElbowR', 'ArmR']
+  HindlimbL: ['HipL', 'KneeL', 'ShinL']
+  HindlimbR: ['HipR', 'KneeR', 'ShinR']
+
+kinematic_tree:
+  - ['SpineM', 'SpineF', 'HeadB', 'HeadF', 'HeadL']
+  - ['SpineM', 'SpineL']
+  - ['SpineF', 'ShoulderL', 'ArmL', 'ElbowL']
+  - ['SpineF', 'ShoulderR', 'ArmR', 'ElbowR']
+  - ['SpineL', 'HipL', 'KneeL', 'ShinL']
+  - ['SpineL', 'HipR', 'KneeR', 'ShinR']
