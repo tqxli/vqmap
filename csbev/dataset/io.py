@@ -14,7 +14,10 @@ def _retrieve_by_template(root, template):
         os.path.join(root, dp, template)
         for dp in candidates
     ]
-    datapaths = [dp for dp in datapaths if os.path.exists(dp)]
+    keep_indices = [idx for idx, dp in enumerate(datapaths) if os.path.exists(dp)]
+    datapaths = [datapaths[idx] for idx in keep_indices]
+    candidates = [candidates[idx] for idx in keep_indices]
+    
     return datapaths, candidates
 
 
@@ -23,7 +26,10 @@ def _retrieve_dannce_basic(root):
 
 
 def _retrieve_dannce_lone(root):
-    return _retrieve_by_template(root, "SDANNCE/bsl0.5_FM/save_data_AVG0.mat")
+    datapaths0, candidates0 = _retrieve_by_template(root, "SDANNCE/bsl0.5_FM/save_data_AVG0.mat")
+    if len(datapaths0) == 0:
+        datapaths0, candidates0 = _retrieve_by_template(root, "SDANNCE_x2/bsl0.5_FM/save_data_AVG0.mat")
+    return datapaths0, candidates0
 
 
 def _retrieve_dannce_social(root):
