@@ -128,6 +128,7 @@ def prepare_datasets(cfg: DictConfig, splits: List[str] = ["train", "val"]):
 
         # Parse paths for train/val/inference
         datapaths = split_datapaths(dataroot, dataset_type, _dataset_cfg.split)
+        datapaths = {k: sorted(v) for k, v in datapaths.items()}
         if (
             (not os.path.isfile(dataroot))
             and splits == ["full"]
