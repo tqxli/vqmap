@@ -99,7 +99,7 @@ class CodeButton(QPushButton):
             font-size: 6pt;
         """
         
-        # If annotated, apply color
+        # If annotated, apply color and bold text
         if self.annotation_color:
             # Get suitable text color (black or white) based on background brightness
             bg_color = QColor(self.annotation_color)
@@ -110,6 +110,7 @@ class CodeButton(QPushButton):
                     {text_style}
                     color: {text_color};
                     background-color: {self.annotation_color};
+                    font-weight: bold;
                     border: 2px solid #444444;
                 }}
             """)
@@ -175,36 +176,48 @@ class ModelViewer(QWidget):
         annotation_layout.setSpacing(2)
         annotation_layout.setContentsMargins(5, 5, 5, 5)  # Smaller margins
         
-        # First row: title, label selector, color controls in one row
-        top_row = QHBoxLayout()
+        # First row: title and label palette
+        top_row = QVBoxLayout()
+        top_row.setSpacing(2)
         
+        header_row = QHBoxLayout()
         annotation_title = QLabel("Code Annotation:")
         annotation_title.setStyleSheet("font-weight: bold;")
-        top_row.addWidget(annotation_title)
+        header_row.addWidget(annotation_title)
         
-        # Label selector
-        self.label_selector = QComboBox()
-        self.label_selector.setEditable(True)
-        self.label_selector.setPlaceholderText("Select or enter label")
-        self.label_selector.setMaximumWidth(200)  # Limit width
-        top_row.addWidget(self.label_selector, 1)
+        # Add new label button
+        add_label_btn = QPushButton("+ New Label")
+        add_label_btn.setMaximumWidth(100)
+        add_label_btn.clicked.connect(self.create_new_label)
+        header_row.addWidget(add_label_btn)
         
-        # Color indicator
-        self.color_indicator = QLabel()
-        self.color_indicator.setFixedSize(16, 16)
-        self.color_indicator.setStyleSheet("background-color: #CCCCCC; border: 1px solid black;")
-        top_row.addWidget(self.color_indicator)
-        
-        # Add label button (smaller)
-        add_label_btn = QPushButton("Add")
-        add_label_btn.setMaximumWidth(50)
-        add_label_btn.clicked.connect(self.add_new_label)
-        top_row.addWidget(add_label_btn)
-        
-        # Apply annotation button (smaller)
+        # Apply annotation button
         apply_button = QPushButton("Apply to Selected")
         apply_button.clicked.connect(self.apply_annotation)
-        top_row.addWidget(apply_button)
+        # set this button to orange color
+        apply_button.setStyleSheet("background-color: #FFA500; color: white;")
+        # move the button away from add label button
+        header_row.addStretch(2)
+        header_row.addWidget(apply_button)
+        
+        top_row.addLayout(header_row)
+        
+        # Label palette - horizontal scrollable area for labels
+        palette_scroll = QScrollArea()
+        palette_scroll.setWidgetResizable(True)
+        palette_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        palette_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        palette_scroll.setMaximumHeight(30)
+        
+        # Container for label buttons
+        palette_widget = QWidget()
+        self.palette_layout = QHBoxLayout(palette_widget)
+        self.palette_layout.setSpacing(4)
+        self.palette_layout.setContentsMargins(2, 0, 2, 0)
+        self.palette_layout.addStretch(1)  # Push buttons to the left
+        
+        palette_scroll.setWidget(palette_widget)
+        top_row.addWidget(palette_scroll)
         
         annotation_layout.addLayout(top_row)
         
@@ -241,17 +254,18 @@ class ModelViewer(QWidget):
         
         layout.addWidget(annotation_panel)
         
-        # Initialize with default colors
-        self.initialize_default_labels()
+        # Store the currently selected label and initialize label buttons
+        self.selected_label = None
+        self.label_buttons = {}  # To keep track of label buttons
 
     def set_model(self, model):
         """Set the model to visualize"""
         self.model = model
         self.code_sequences = None
-
+        
         # depending on the model, we have arbitary number, different skeletons to visualize
         self.skeleton_names = self.model.skeleton_names
-
+        
         # make the canvas here
         plot_args = {
             "linewidth": 1.0,
@@ -267,7 +281,7 @@ class ModelViewer(QWidget):
         }
         for skeleton_name, canvas in self.animated_canvas.items():
             self.viz_layout.addWidget(canvas)
-
+        
         # Set checkpoint directory for saving/loading annotations
         if hasattr(model, 'checkpoint_path'):
             self.checkpoint_dir = os.path.dirname(model.checkpoint_path)
@@ -289,8 +303,7 @@ class ModelViewer(QWidget):
                     self.label_colors = data.get("colors", {})
                     
                     # Update UI
-                    self.label_selector.clear()
-                    self.label_selector.addItems(sorted(self.label_colors.keys()))
+                    self.update_label_buttons()
                     
                 except Exception:
                     # If loading fails, initialize with defaults
@@ -357,13 +370,15 @@ class ModelViewer(QWidget):
             self.display_sequence(i, j)
             self.code_selected.emit(i, j)
             
-            # Update annotation UI for this code
+            # Update selected label for this code
             if (i, j) in self.annotations:
                 label = self.annotations[(i, j)]
-                self.label_selector.setCurrentText(label)
+                self.select_label(label)
             else:
-                self.label_selector.setCurrentText("")
-            self.update_color_indicator()
+                # Unselect all
+                for btn in self.label_buttons.values():
+                    btn.setChecked(False)
+                self.selected_label = None
 
     def display_sequence(self, i, j):
         """Display a specific code sequence"""
@@ -394,43 +409,55 @@ class ModelViewer(QWidget):
                                   random.randint(180, 230), 
                                   random.randint(180, 230))
             self.label_colors[label] = color.name()
-            
-        # Update the combo box
-        self.label_selector.clear()
-        self.label_selector.addItems(sorted(self.label_colors.keys()))
+        
+        # Create palette buttons
+        for label in sorted(self.label_colors.keys()):
+            self.add_label_to_palette(label)
         
         # Update color indicator for current selection
         self.update_color_indicator()
+
+    def update_label_buttons(self):
+        """Update the label buttons based on the current labels"""
+        # Clear existing buttons
+        for btn in self.label_buttons.values():
+            btn.deleteLater()
+        self.label_buttons = {}
         
+        # Create palette buttons
+        for label in sorted(self.label_colors.keys()):
+            self.add_label_to_palette(label)
+    
+    def select_label(self, label):
+        """Select a label from the label buttons"""
+        self.selected_label = label
+        self.update_color_indicator()
+    
     def update_color_indicator(self):
         """Update the color indicator to match the selected label"""
-        current_label = self.label_selector.currentText()
-        if current_label in self.label_colors:
-            self.color_indicator.setStyleSheet(
-                f"background-color: {self.label_colors[current_label]}; border: 1px solid black;")
-        else:
-            self.color_indicator.setStyleSheet("background-color: #CCCCCC; border: 1px solid black;")
+        # Reset all buttons to unselected state
+        for label, btn in self.label_buttons.items():
+            # Use normal style for unselected buttons
+            checked = (label == self.selected_label)
+            btn.setChecked(checked)
     
-    def add_new_label(self):
-        """Add a new label with a user-selected color"""
-        label = self.label_selector.currentText().strip()
-        if not label:
-            return
+    def create_new_label(self):
+        """Create a new label with user-selected name and color"""
+        label, ok = QInputDialog.getText(self, "New Label", "Enter label name:")
+        if ok and label.strip():
+            label = label.strip()
             
-        # If label already exists, just update the color
-        if label not in self.label_colors:
+            # Don't allow duplicates
+            if label in self.label_colors:
+                QMessageBox.warning(self, "Duplicate", "This label already exists")
+                return
+            
             # Let user pick a color
             color = QColorDialog.getColor()
             if color.isValid():
                 self.label_colors[label] = color.name()
-                
-                # Add to combo box if not already there
-                if self.label_selector.findText(label) == -1:
-                    self.label_selector.addItem(label)
-                self.label_selector.setCurrentText(label)
-        
-        self.update_color_indicator()
-        self.update_grid_colors()
+                self.add_label_to_palette(label)
+                self.select_label(label)
     
     def apply_annotation(self):
         """Apply the selected label to the currently selected code"""
@@ -439,23 +466,14 @@ class ModelViewer(QWidget):
             return
             
         i, j = self.selected_code
-        label = self.label_selector.currentText().strip()
         
-        if not label:
-            # Remove annotation if empty label
+        if not self.selected_label:
+            # Remove annotation if no label selected
             if (i, j) in self.annotations:
                 del self.annotations[(i, j)]
         else:
-            # Add label to new colors if needed
-            if label not in self.label_colors:
-                # Generate a random color
-                color = QColor.fromHsv(random.randint(0, 359), 200, 200)
-                self.label_colors[label] = color.name()
-                if self.label_selector.findText(label) == -1:
-                    self.label_selector.addItem(label)
-            
-            # Apply annotation
-            self.annotations[(i, j)] = label
+            # Apply annotation with selected label
+            self.annotations[(i, j)] = self.selected_label
         
         # Update the grid visualization
         self.update_annotation_list()
@@ -490,100 +508,84 @@ class ModelViewer(QWidget):
             item.setForeground(QColor(text_color))
             
             self.annotation_list.addItem(item)
-    
-    def update_grid_colors(self):
-        """Update colors of grid cells based on annotations"""
-        if not hasattr(self, 'grid_layout'):
-            return
-            
-        # Iterate through all grid items
-        for i in range(self.grid_layout.rowCount()):
-            for j in range(self.grid_layout.columnCount()):
-                item = self.grid_layout.itemAtPosition(i, j)
-                if not item:
-                    continue
-                    
-                # Get the widget (could be a cell container or a button)
-                widget = item.widget()
-                
-                # Find the button - it's either the widget directly or a child
-                btn = None
-                if isinstance(widget, CodeButton):
-                    btn = widget
-                else:
-                    # Look for a CodeButton within this widget
-                    for child in widget.findChildren(CodeButton):
-                        btn = child
-                        break
-                
-                if btn:
-                    # Apply color based on annotation
-                    if (i, j) in self.annotations:
-                        label = self.annotations[(i, j)]
-                        color = self.label_colors.get(label, "#CCCCCC")
-                        btn.annotate(label, color)
-                    else:
-                        btn.remove_annotation()
-    
+
     def annotation_selected(self, item):
-        """When an annotation is selected from the list"""
+        """Handle selection of an annotation from the list"""
+        if not item:
+            return
+        
         text = item.text()
-        # Extract label from text
+        # Get the label part (before the colon)
         if ":" in text:
             label = text.split(":")[0].strip()
-            self.label_selector.setCurrentText(label)
-            self.update_color_indicator()
-    
+            
+            # Select this label in the palette
+            if label in self.label_buttons:
+                self.select_label(label)
+            
+            # Find a code with this label to select (first one in the list)
+            for (i, j), anno_label in self.annotations.items():
+                if anno_label == label:
+                    self.selected_code = (i, j)
+                    self.display_sequence(i, j)
+                    self.code_selected.emit(i, j)
+                    break
+
     def show_annotation_context_menu(self, position):
         """Show context menu for annotation list items"""
         item = self.annotation_list.itemAt(position)
         if not item:
             return
-            
+        
         text = item.text()
         if ":" not in text:
             return
-            
+        
         label = text.split(":")[0].strip()
         
         # Create context menu
         menu = QMenu()
+        
+        # Add menu actions
         change_color = QAction("Change Color", self)
         change_color.triggered.connect(lambda: self.change_label_color(label))
         menu.addAction(change_color)
+        
+        rename_label = QAction("Rename Label", self)
+        rename_label.triggered.connect(lambda: self.rename_label(label))
+        menu.addAction(rename_label)
         
         delete_label = QAction("Delete Label", self)
         delete_label.triggered.connect(lambda: self.delete_label(label))
         menu.addAction(delete_label)
         
+        # Add action to select all codes with this label
+        select_all = QAction("Select All with This Label", self)
+        select_all.triggered.connect(lambda: self.select_codes_with_label(label))
+        menu.addAction(select_all)
+        
+        # Display the menu at the right position
         menu.exec_(self.annotation_list.mapToGlobal(position))
-    
-    def change_label_color(self, label):
-        """Change the color for a specific label"""
-        if label in self.label_colors:
-            color = QColorDialog.getColor(QColor(self.label_colors[label]))
-            if color.isValid():
-                self.label_colors[label] = color.name()
-                self.update_annotation_list()
-                self.update_grid_colors()
-                self.update_color_indicator()
-    
-    def delete_label(self, label):
-        """Delete a label and all its annotations"""
-        if label in self.label_colors:
-            # Remove all annotations with this label
-            self.annotations = {k: v for k, v in self.annotations.items() if v != label}
-            # Remove label from colors
-            del self.label_colors[label]
-            # Update UI
-            self.update_annotation_list()
-            self.update_grid_colors()
+
+    def select_codes_with_label(self, label):
+        """Select all codes that have the specified label"""
+        # Get all codes with this label
+        codes = [(i, j) for (i, j), l in self.annotations.items() if l == label]
+        
+        if codes:
+            # Select the first code to display its sequence
+            self.selected_code = codes[0]
+            i, j = codes[0]
+            self.display_sequence(i, j)
+            self.code_selected.emit(i, j)
             
-            # Update combo box
-            index = self.label_selector.findText(label)
-            if index >= 0:
-                self.label_selector.removeItem(index)
-    
+            # Select the label in the palette
+            self.select_label(label)
+            
+            # Provide feedback about how many codes were found
+            count = len(codes)
+            QMessageBox.information(self, "Selection", f"Found {count} codes with label '{label}'")
+
     def save_annotations(self):
         """Save annotations to a JSON file in the checkpoint directory"""
         if not self.checkpoint_dir:
@@ -592,20 +594,28 @@ class ModelViewer(QWidget):
             if not self.checkpoint_dir:
                 return
         
-        # Create annotations data structure
-        data = {
-            "annotations": {f"{i},{j}": label for (i, j), label in self.annotations.items()},
-            "colors": self.label_colors
-        }
+        if not self.annotations:
+            QMessageBox.warning(self, "No Data", "No annotations to save")
+            return
         
-        # Save to file
-        filename = os.path.join(self.checkpoint_dir, "code_annotations.json")
-        with open(filename, 'w') as f:
-            json.dump(data, f, indent=2)
+        try:
+            # Create annotations data structure
+            data = {
+                "annotations": {f"{i},{j}": label for (i, j), label in self.annotations.items()},
+                "colors": self.label_colors
+            }
             
-        # Inform user
-        QMessageBox.information(self, "Saved", f"Annotations saved to {filename}")
-    
+            # Save to file
+            filename = os.path.join(self.checkpoint_dir, "code_annotations.json")
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=2)
+            
+            # Inform user
+            QMessageBox.information(self, "Saved", f"Annotations saved to {filename}")
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to save annotations: {str(e)}")
+
     def load_annotations(self):
         """Load annotations from a JSON file"""
         if not self.checkpoint_dir:
@@ -613,70 +623,154 @@ class ModelViewer(QWidget):
                 self, "Select Checkpoint Directory", "")
             if not self.checkpoint_dir:
                 return
-                
+            
         filename = os.path.join(self.checkpoint_dir, "code_annotations.json")
         
         if not os.path.exists(filename):
             QMessageBox.warning(self, "Not Found", "No annotations file found in this directory")
             return
-            
+        
         try:
             with open(filename, 'r') as f:
                 data = json.load(f)
-                
+            
             # Load annotations
             self.annotations = {}
             for key, label in data.get("annotations", {}).items():
                 i, j = map(int, key.split(","))
                 self.annotations[(i, j)] = label
-                
+            
             # Load colors
             self.label_colors = data.get("colors", {})
             
+            # Clear existing palette buttons
+            for btn in self.label_buttons.values():
+                btn.deleteLater()
+            self.label_buttons = {}
+            
+            # Recreate palette
+            for label in sorted(self.label_colors.keys()):
+                self.add_label_to_palette(label)
+            
             # Update UI
-            self.label_selector.clear()
-            self.label_selector.addItems(sorted(self.label_colors.keys()))
             self.update_annotation_list()
             self.update_grid_colors()
-            self.update_color_indicator()
             
             QMessageBox.information(self, "Loaded", "Annotations loaded successfully")
             
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to load annotations: {str(e)}")
-    
+
     def export_annotations(self):
         """Export annotations to a text file"""
         if not self.annotations:
             QMessageBox.warning(self, "No Data", "No annotations to export")
             return
-            
+        
         filename, _ = QFileDialog.getSaveFileName(
             self, "Export Annotations", "", "Text Files (*.txt);;All Files (*)")
-            
+        
         if not filename:
             return
-            
+        
         try:
             with open(filename, 'w') as f:
                 f.write("# Code Annotations\n\n")
-                
-                # Group by label
-                by_label = {}
-                for (i, j), label in self.annotations.items():
-                    if label not in by_label:
-                        by_label[label] = []
-                    by_label[label].append((i, j))
-                
-                # Write each label group
-                for label, codes in sorted(by_label.items()):
-                    codes.sort()
-                    f.write(f"## {label}\n")
-                    for i, j in codes:
-                        f.write(f"Code ({i},{j})\n")
-                    f.write("\n")
-                    
-            QMessageBox.information(self, "Exported", f"Annotations exported to {filename}")
             
+            # Group by label
+            by_label = {}
+            for (i, j), label in self.annotations.items():
+                if label not in by_label:
+                    by_label[label] = []
+                by_label[label].append((i, j))
+            
+            # Write each label group
+            for label, codes in sorted(by_label.items()):
+                codes.sort()
+                f.write(f"## {label}\n")
+                for i, j in codes:
+                    f.write(f"Code ({i},{j})\n")
+                f.write("\n")
+                
+            QMessageBox.information(self, "Exported", f"Annotations exported to {filename}")
+        
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export: {str(e)}")
+
+    def add_label_to_palette(self, label):
+        """Add a label button to the palette"""
+        if label in self.label_buttons:
+            return  # Already exists
+        
+        color = self.label_colors.get(label, "#CCCCCC")
+        
+        # Create a colored button with the label
+        btn = QPushButton(label)
+        btn.setCheckable(True)
+        btn.setMinimumWidth(80)
+        btn.setMaximumHeight(24)
+        
+        # Set color based on label
+        text_color = "#000000" if QColor(color).lightness() > 128 else "#FFFFFF"
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color};
+                color: {text_color};
+                border: 1px solid #888888;
+                border-radius: 3px;
+                padding: 2px 8px;
+            }}
+            QPushButton:checked {{
+                border: 2px solid #000000;
+                font-weight: bold;
+            }}
+            QPushButton:hover {{
+                border: 2px solid #444444;
+            }}
+        """)
+        
+        # Connect click event
+        btn.clicked.connect(lambda checked, lbl=label: self.select_label(lbl))
+        
+        # Add to layout before the stretch
+        self.palette_layout.insertWidget(self.palette_layout.count()-1, btn)
+        
+        # Store reference to button
+        self.label_buttons[label] = btn
+
+    def update_grid_colors(self):
+        """Update the grid button colors based on annotations"""
+        if not hasattr(self, 'model') or not self.model:
+            return
+        
+        # Loop through grid cells
+        for i in range(self.model.N):
+            for j in range(self.model.M):
+                # Find the button in the container widget
+                item = self.grid_layout.itemAtPosition(i, j)
+                if not item:
+                    continue
+                
+                container = item.widget()
+                if not container:
+                    continue
+                
+                # Find the CodeButton inside the container (second widget in VBoxLayout)
+                button = None
+                for child_idx in range(container.layout().count()):
+                    child = container.layout().itemAt(child_idx).widget()
+                    if isinstance(child, CodeButton):
+                        button = child
+                        break
+                
+                if not button:
+                    continue
+                
+                # Update the button's annotation
+                coords = (i, j)
+                if coords in self.annotations:
+                    label = self.annotations[coords]
+                    color = self.label_colors.get(label, "#CCCCCC")
+                    button.annotate(label, color)
+                else:
+                    button.remove_annotation()
