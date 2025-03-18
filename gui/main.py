@@ -27,11 +27,14 @@ class MainWindow(QMainWindow):
 
         # Main layout
         main_widget = QWidget()
+        main_widget.setStyleSheet("font-family: 'monospace';")
         main_layout = QVBoxLayout(main_widget)
 
         # Model selection area
         model_selection_layout = QHBoxLayout()
-        model_selection_layout.addWidget(QLabel("Model File:"))
+        checkpoint_label = QLabel("Model Checkpoint:")
+        checkpoint_label.setStyleSheet("font-weight: bold;")
+        model_selection_layout.addWidget(checkpoint_label)
 
         self.model_path_label = QLabel("No model selected")
         self.model_path_label.setWordWrap(True)
@@ -44,6 +47,7 @@ class MainWindow(QMainWindow):
         self.load_button = QPushButton("Load Model")
         self.load_button.clicked.connect(self.load_selected_model)
         self.load_button.setEnabled(False)
+
         model_selection_layout.addWidget(self.load_button)
         main_layout.addLayout(model_selection_layout)
 
@@ -95,9 +99,40 @@ class MainWindow(QMainWindow):
 def main():
     app = QApplication(sys.argv)
     window = MainWindow()
+
+    window.setStyleSheet(
+        """
+        #grid_cell {
+            background-color: #cccfce;
+            color: white;
+            border-radius: 4px;
+            padding: 2px 4px;
+            border: 1px solid #a0a0a0;
+        }
+        
+        #grid_cell:hover {
+            background-color: #b8bab9;
+        }
+        
+        #grid_cell:pressed {
+            background-color: #9a9c9b;
+            color: #e0e0e0;
+            border: 1px inset #808080;
+        }
+        
+    """
+    )
+
     window.show()
     sys.exit(app.exec_())
 
 
 if __name__ == "__main__":
+    # Check how many threads QThreadPool uses by default
+    # from PyQt5.QtCore import QThreadPool
+    # print(QThreadPool.globalInstance().maxThreadCount())
+
+    # You can change this if needed
+    # QThreadPool.globalInstance().setMaxThreadCount(10)  # Set to 10
+
     main()

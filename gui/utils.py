@@ -58,7 +58,7 @@ class MatplotlibCanvas(FigureCanvasQTAgg):
 class AnimatedSequenceCanvas(QWidget):
     """Canvas that shows an animated sequence of poses"""
 
-    def __init__(self, parent=None, width=3, height=3, dpi=100, plot_args={}):
+    def __init__(self, parent=None, width=3, height=3, dpi=72, plot_args={}):
         super().__init__(parent)
         self.setMinimumSize(width * dpi, height * dpi)
 
@@ -98,6 +98,7 @@ class AnimatedSequenceCanvas(QWidget):
         # Title label
         self.title_label = QLabel("")
         self.title_label.setAlignment(Qt.AlignCenter)
+        self.title_label.setStyleSheet("font-size: 12px; color: black;")
         layout.addWidget(self.title_label)
 
         # Canvas for visualization
@@ -143,6 +144,24 @@ class AnimatedSequenceCanvas(QWidget):
         self.current_frame = 0
         if self.sequence is not None:
             self.frame_label.setText(f"0/{len(self.sequence)-1}")
+
+    def pause_animation(self):
+        """Pause the animation"""
+        if hasattr(self, "timer"):
+            self.timer.stop()
+
+    def resume_animation(self):
+        """Resume the animation"""
+        if hasattr(self, "timer") and self.sequence is not None:
+            # Store interval if not already done
+            if not hasattr(self, "interval") or self.interval is None:
+                self.interval = 100  # Default fallback interval
+
+            # Only start if we have frames to display
+            if len(self.sequence) > 0:
+                self.timer.start(self.interval)
+                # Make sure to update the canvas to show the current frame
+                self.update()
 
     def update_frame(self):
         """Update to the next frame in the animation"""
@@ -240,7 +259,8 @@ class ModelWrapper:
         savepath = os.path.join(savedir, f"{dataset_name}.pt")
         if os.path.exists(savepath):
             codes = torch.load(savepath, weights_only=True, map_location="cpu")
-            return codes.detach().cpu().numpy(), pose3d
+            print(f"Loaded embeddings {codes.shape} for {dataset_name} from {savepath}")
+            return codes.detach().cpu().numpy(), pose3d, dataset_name
 
         dataloader = DataLoader(
             dataset, shuffle=False, **self.cfg_model.dataloader["val"]
@@ -248,7 +268,7 @@ class ModelWrapper:
         codes = []
         for batch in dataloader:
             batch = move_data_to_device(batch, self.device)
-            batch["tag_in"] = batch["tag_out"] = self.default_skeleton_name
+            batch["tag_in"] = batch["tag_out"] = dataset_name
             z, (_, info), _ = self.model.encode(batch)
             mapped_codes = (
                 torch.stack([_info[1] for _info in info], dim=1).detach().cpu()
@@ -257,9 +277,11 @@ class ModelWrapper:
         codes = torch.cat(codes, dim=0)
         print(f"Saving embeddings {codes.shape} for {dataset_name} to {savedir}")
         torch.save(codes, os.path.join(savedir, f"{dataset_name}.pt"))
-        return codes.detach().cpu().numpy(), pose3d
+        return codes.detach().cpu().numpy(), pose3d, dataset_name
 
-    def compute_code_statistics(self, codes, pose3d, n_sequences=10, duration=25):
+    def compute_code_statistics(
+        self, codes, pose3d, dataset_name, n_sequences=10, duration=25
+    ):
         n_frames = pose3d.shape[0]
         n_codes = codes.shape[0]
         assert n_frames % n_codes == 0
@@ -288,7 +310,7 @@ class ModelWrapper:
                     rand_frame_ranges.append(
                         (frame_idx - start_offset, frame_idx + end_offset)
                     )
-                    count += 1
+                count += 1
             # map frame ranges to sequences
             rand_sequences = [
                 pose3d[frame_range[0] : frame_range[1], :, :]
@@ -302,7 +324,7 @@ class ModelWrapper:
         results = {
             "code_counts": code_counts,
             "total_samples": codes.shape[0],
-            "dataset_name": self.default_skeleton_name,
+            "dataset_name": dataset_name,
             # 'code_to_frames': code_frame_mapper,
             "code_to_sequences": code_to_sequences,
         }

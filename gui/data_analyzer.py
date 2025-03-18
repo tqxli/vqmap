@@ -30,21 +30,23 @@ class CodeCell(QPushButton):
         self.usage_count = 0
         self.usage_percent = 0
 
-        # add colormap for showing usage
-
     def update_stats(self, count, total):
         """Update usage statistics for this code cell"""
         self.usage_count = count
         self.usage_percent = (count / total * 100) if total > 0 else 0
         self.setText(f"({self.i},{self.j})\n{self.usage_percent:.1f}%")
 
-        # Add visual indicator based on usage
+        # Create style string with font properties
+        style = "font-size: 12px; color: black;"
+        
+        # Add background color based on usage
         if self.usage_percent > 2:
-            self.setStyleSheet("background-color: #99ff99;")  # Green for high usage
+            style += "background-color: #99ff99;"  # Green for high usage
         elif self.usage_percent > 0.5:
-            self.setStyleSheet("background-color: #ffff99;")  # Yellow for medium
-        else:
-            self.setStyleSheet("")  # Default for low usage
+            style += "background-color: #ffff99;"  # Yellow for medium
+        
+        # Apply all styles at once
+        self.setStyleSheet(style)
 
 
 class EmbeddingThread(QThread):
@@ -55,6 +57,7 @@ class EmbeddingThread(QThread):
         super().__init__()
         self.model = model
         self.config_path = config_path
+        self.skeleton_name = model.default_skeleton_name
 
         config_root = "../configs"
         config_name = os.path.basename(config_path)
@@ -65,11 +68,10 @@ class EmbeddingThread(QThread):
     def run(self):
         """Run the embedding process in a separate thread"""
         try:
-            
-            
             datasets = self.model.load_dataset_from_cfg(self.cfg)
-            codes, pose3d = self.model.embed(datasets)
-            results = self.model.compute_code_statistics(codes, pose3d)
+            codes, pose3d, skeleton_name = self.model.embed(datasets)
+            results = self.model.compute_code_statistics(codes, pose3d, skeleton_name)
+            self.skeleton_name = skeleton_name
             self.result.emit(results)
         except Exception as e:
             print(f"Error in embedding: {str(e)}")
@@ -109,12 +111,13 @@ class DataAnalyzer(QWidget):
         self.embed_btn.setEnabled(False)
         controls_layout.addWidget(self.embed_btn)
 
-        layout.addLayout(controls_layout)
+        # Add pause/resume button for animations
+        self.pause_btn = QPushButton("Pause Animations")
+        self.pause_btn.clicked.connect(self.toggle_animations)
+        self.animations_paused = False
+        controls_layout.addWidget(self.pause_btn)
 
-        # Progress bar
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
+        layout.addLayout(controls_layout)
 
         # Add a horizontal split
         split_line = QLabel()
@@ -157,7 +160,7 @@ class DataAnalyzer(QWidget):
             "coord_limits": 1.0,
         }
         self.canvas = AnimatedSequenceCanvas(
-            self, width=1.5, height=1.5, plot_args=plot_args
+            self, width=2, height=2, plot_args=plot_args
         )
         viz_layout.addWidget(self.canvas)
 
@@ -174,7 +177,7 @@ class DataAnalyzer(QWidget):
             row = []
             for j in range(n_cols):
                 canvas = AnimatedSequenceCanvas(
-                    self, width=1.5, height=1.5, plot_args=plot_args
+                    self, width=2, height=2, plot_args=plot_args
                 )
                 examples_grid.addWidget(canvas, i, j)
                 row.append(canvas)
@@ -187,9 +190,7 @@ class DataAnalyzer(QWidget):
         self.update_ui_state()
         self.setup_grid()
 
-        self.code_sequences = self.model.sample_latent_codes()[
-            self.model.default_skeleton_name
-        ]
+        self.code_sequences = self.model.sample_latent_codes()
 
     def setup_grid(self):
         """Set up the grid based on model dimensions"""
@@ -204,6 +205,7 @@ class DataAnalyzer(QWidget):
                 for j in range(self.model.M):
                     cell = CodeCell(i, j)
                     cell.clicked.connect(self.cell_clicked)
+                    cell.setObjectName("grid_cell")
                     self.grid_layout.addWidget(cell, i, j)
                     self.code_cells[(i, j)] = cell
 
@@ -237,24 +239,24 @@ class DataAnalyzer(QWidget):
             return
 
         # Setup and start the embedding thread
-        self.progress_bar.setValue(0)
-        self.progress_bar.setVisible(True)
+        # Update button to show loading status instead of using progress bar
+        self.embed_btn.setText("Embedding in progress...")
         self.embed_btn.setEnabled(False)
+        self.embed_btn.setStyleSheet("background-color: #ffcc66;")  # Orange for in-progress
+        self.browse_btn.setEnabled(False)
 
         self.thread = EmbeddingThread(self.model, self.config_path.toolTip())
-        self.thread.progress.connect(self.update_progress)
         self.thread.result.connect(self.show_results)
         self.thread.start()
-
-    def update_progress(self, value):
-        """Update the progress bar"""
-        self.progress_bar.setValue(value)
 
     def show_results(self, results):
         """Display the embedding results"""
         self.embedding_results = results
-        self.progress_bar.setVisible(False)
+        # Reset button state to normal
+        self.embed_btn.setText("Embed Dataset")
         self.embed_btn.setEnabled(True)
+        self.embed_btn.setStyleSheet("")  # Reset to default style
+        self.browse_btn.setEnabled(True)
 
         # Update grid cells with statistics
         code_counts = results["code_counts"]
@@ -290,9 +292,13 @@ class DataAnalyzer(QWidget):
         )
 
         # Show the code's representative sequence
-        if self.code_sequences is not None and (i, j) in self.code_sequences:
-            sequence = self.code_sequences[(i, j)]
-            self.canvas.set_sequence(sequence, self.model.default_skeleton)
+        skeleton = self.model.skeletons[self.thread.skeleton_name]
+        if (
+            self.code_sequences is not None
+            and (i, j) in self.code_sequences[self.thread.skeleton_name]
+        ):
+            sequence = self.code_sequences[self.thread.skeleton_name][(i, j)]
+            self.canvas.set_sequence(sequence, skeleton)
 
         # Show example sequences if available
         example_sequences = None
@@ -317,8 +323,27 @@ class DataAnalyzer(QWidget):
         sequences = sequences[: n_rows * n_cols]
 
         # Display each sequence
+        skeleton = self.model.skeletons[self.thread.skeleton_name]
         for idx, sequence in enumerate(sequences):
             i, j = divmod(idx, n_cols)
             if i < n_rows and j < n_cols:
                 canvas = self.example_canvases[i][j]
-                canvas.set_sequence(sequence, self.model.default_skeleton)
+                canvas.set_sequence(sequence, skeleton)
+
+    def toggle_animations(self):
+        """Toggle pause/resume for all sequence animations"""
+        self.animations_paused = not self.animations_paused
+
+        # Update button text based on state
+        self.pause_btn.setText(
+            "Resume Animations" if self.animations_paused else "Pause Animations"
+        )
+
+        # Pause/resume all example canvas animations
+        for row in self.example_canvases:
+            for canvas in row:
+                if hasattr(canvas, "timer"):
+                    if self.animations_paused:
+                        canvas.pause_animation()
+                    else:
+                        canvas.resume_animation()
