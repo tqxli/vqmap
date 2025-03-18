@@ -5,6 +5,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 from hydra.utils import instantiate
+import tempfile
+import hashlib
 
 from PyQt5.QtWidgets import (
     QMessageBox,
@@ -17,6 +19,9 @@ from PyQt5.QtWidgets import (
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
+from PyQt5.QtMultimediaWidgets import QVideoWidget
+from PyQt5.QtCore import QUrl
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from csbev.dataset.loader import prepare_datasets, prepare_dataloaders
@@ -90,6 +95,14 @@ class AnimatedSequenceCanvas(QWidget):
         self.timer.timeout.connect(self.update_frame)
         self.fps = 30  # Frames per second
         self.auto_loop = True  # Add auto-loop functionality
+        
+        # Cache management
+        self.cache_dir = os.path.join(tempfile.gettempdir(), "pose_animation_cache")
+        self.max_cache_size_mb = 500  # Maximum cache size in MB
+        self.video_path = None
+        
+        # Create cache directory if it doesn't exist
+        os.makedirs(self.cache_dir, exist_ok=True)
 
         # Create layout
         layout = QVBoxLayout(self)
@@ -123,45 +136,172 @@ class AnimatedSequenceCanvas(QWidget):
         self.sequence = sequence
         self.skeleton = skeleton
         self.current_frame = 0
+        
+        # Handle video path
+        self.video_path = None
 
         if title:
             self.title_label.setText(title)
 
         if sequence is not None:
             self.frame_label.setText(f"0/{len(sequence)-1}")
-            self.draw_frame(0)
-
-            # Automatically start playing
-            self.timer.start(1000 // self.fps)
+            
+            # Create a hash of the sequence to use as a unique identifier
+            data_hash = hashlib.md5(sequence.tobytes()).hexdigest()
+            self.video_path = os.path.join(self.cache_dir, f"pose_{data_hash}.mp4")
+            
+            # Check if we need to create a video
+            if not os.path.exists(self.video_path):
+                self.create_animation_video(self.video_path)
+            else:
+                # Touch the file to update access time
+                os.utime(self.video_path, None)
+            
+            # Setup video playback if needed
+            if hasattr(self, 'media_player'):
+                self.setup_video_playback()
+            else:
+                # Draw first frame
+                self.draw_frame(0)
+                # Automatically start playing
+                self.timer.start(1000 // self.fps)
+                
+            # Clean up cache if needed
+            self.cleanup_video_cache()
         else:
             self.axes.clear()
             self.canvas.draw()
             self.frame_label.setText("0/0")
 
-    def stop_animation(self):
-        """Stop the animation"""
-        self.timer.stop()
-        self.current_frame = 0
-        if self.sequence is not None:
-            self.frame_label.setText(f"0/{len(self.sequence)-1}")
+    def create_animation_video(self, output_path):
+        """Create and save an animation video of the sequence"""
+        import matplotlib
+        from matplotlib.animation import FuncAnimation
+        
+        # Create a new figure for the animation
+        temp_fig = plt.figure(figsize=self.fig.get_size_inches())
+        temp_ax = temp_fig.add_subplot(111, projection='3d')
+        
+        # Configure the temp axis to match our display settings
+        temp_ax.xaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+        temp_ax.yaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+        temp_ax.zaxis.set_pane_color((1.0, 1.0, 1.0, 0.0))
+        temp_ax.xaxis._axinfo["grid"]["color"] = (1, 1, 1, 0)
+        temp_ax.yaxis._axinfo["grid"]["color"] = (1, 1, 1, 0)
+        temp_ax.zaxis._axinfo["grid"]["color"] = (1, 1, 1, 0)
+        
+        # Initialize frame function
+        def update(frame):
+            temp_ax.clear()
+            pose = self.sequence[frame]
+            visualize_pose(pose=pose, skeleton=self.skeleton, ax=temp_ax, **self.plot_args)
+            return []
+        
+        # Create the animation
+        anim = FuncAnimation(
+            temp_fig, update, frames=len(self.sequence), 
+            interval=1000//self.fps, blit=True
+        )
+        
+        # Save the animation
+        writer = matplotlib.animation.FFMpegWriter(fps=self.fps, bitrate=5000)
+        anim.save(output_path, writer=writer)
+        
+        # Close the temporary figure
+        plt.close(temp_fig)
 
-    def pause_animation(self):
-        """Pause the animation"""
-        if hasattr(self, "timer"):
+    def setup_video_playback(self):
+        """Set up video playback using media player"""
+        # Set up the media content
+        self.media_player.setMedia(QMediaContent(QUrl.fromLocalFile(os.path.abspath(self.video_path))))
+        self.video_widget.show()
+        self.media_player.play()
+
+    def handle_state_changed(self, state):
+        """Handle media player state changes"""
+        # If media playback has ended and auto_loop is true, restart
+        if state == QMediaPlayer.StoppedState and self.auto_loop:
+            self.media_player.play()
+
+    def cleanup_video_cache(self, force_all=False):
+        """Clean up video cache files"""
+        # Get all cache files with their info
+        cache_files = []
+        total_size = 0
+        
+        for filename in os.listdir(self.cache_dir):
+            if filename.endswith('.mp4'):
+                filepath = os.path.join(self.cache_dir, filename)
+                file_size = os.path.getsize(filepath)
+                file_time = os.path.getmtime(filepath)
+                cache_files.append((filepath, file_size, file_time))
+                total_size += file_size
+        
+        # Convert total size to MB
+        total_size_mb = total_size / (1024 * 1024)
+        
+        # If force_all is True, delete everything
+        if force_all:
+            for filepath, _, _ in cache_files:
+                try:
+                    os.remove(filepath)
+                except Exception as e:
+                    print(f"Failed to delete {filepath}: {e}")
+            return
+            
+        # Check if we need to clean up based on size limit
+        if total_size_mb > self.max_cache_size_mb:
+            # Sort by access time (oldest first)
+            cache_files.sort(key=lambda x: x[2])
+            
+            # Remove files until we're under the limit
+            target_size = self.max_cache_size_mb * 0.8 * 1024 * 1024  # Target 80% of max
+            current_size = total_size
+            
+            while current_size > target_size and cache_files:
+                filepath, file_size, _ = cache_files.pop(0)  # Remove oldest
+                
+                # Don't delete the current video
+                if self.video_path and filepath == self.video_path:
+                    continue
+                    
+                try:
+                    os.remove(filepath)
+                    current_size -= file_size
+                    print(f"Removed cache file: {filepath}")
+                except Exception as e:
+                    print(f"Failed to delete {filepath}: {e}")
+
+    def closeEvent(self, event):
+        """Called when the widget is closed"""
+        # Clean up resources
+        if hasattr(self, 'media_player'):
+            self.media_player.stop()
+        
+        # Stop any animation timer
+        if hasattr(self, 'timer') and self.timer.isActive():
             self.timer.stop()
+        
+        # Continue with normal close event
+        super().closeEvent(event)
 
-    def resume_animation(self):
-        """Resume the animation"""
-        if hasattr(self, "timer") and self.sequence is not None:
-            # Store interval if not already done
-            if not hasattr(self, "interval") or self.interval is None:
-                self.interval = 100  # Default fallback interval
-
-            # Only start if we have frames to display
-            if len(self.sequence) > 0:
-                self.timer.start(self.interval)
-                # Make sure to update the canvas to show the current frame
-                self.update()
+    def draw_frame(self, frame_idx):
+        """Draw a specific frame of the sequence"""
+        if self.sequence is None or frame_idx >= len(self.sequence):
+            return
+        
+        self.axes.clear()
+        pose = self.sequence[frame_idx]
+        
+        visualize_pose(
+            pose=pose,
+            skeleton=self.skeleton,
+            ax=self.axes,
+            **self.plot_args
+        )
+        
+        # Draw the updated figure
+        self.canvas.draw()
 
     def update_frame(self):
         """Update to the next frame in the animation"""
@@ -176,20 +316,31 @@ class AnimatedSequenceCanvas(QWidget):
         if self.current_frame == len(self.sequence) - 1 and not self.auto_loop:
             self.timer.stop()
 
-    def draw_frame(self, frame_idx):
-        """Draw a specific frame of the sequence"""
-        self.axes.clear()
+    def stop_animation(self):
+        """Stop the animation"""
+        if hasattr(self, 'media_player') and self.media_player:
+            self.media_player.stop()
+        else:
+            self.timer.stop()
+            self.current_frame = 0
+            if self.sequence is not None:
+                self.frame_label.setText(f"0/{len(self.sequence)-1}")
+                self.draw_frame(0)
 
-        if self.sequence is None or frame_idx >= len(self.sequence):
-            return
+    def pause_animation(self):
+        """Pause the animation"""
+        if hasattr(self, 'media_player') and self.media_player:
+            self.media_player.pause()
+        else:
+            self.timer.stop()
 
-        pose = self.sequence[frame_idx]
-        visualize_pose(
-            pose=pose, skeleton=self.skeleton, ax=self.axes, **self.plot_args,
-        )
-
-        # Draw the updated figure
-        self.canvas.draw()
+    def resume_animation(self):
+        """Resume the animation"""
+        if hasattr(self, 'media_player') and self.media_player:
+            self.media_player.play()
+        else:
+            if self.sequence is not None and len(self.sequence) > 0:
+                self.timer.start(1000 // self.fps)
 
 
 class ModelWrapper:

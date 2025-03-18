@@ -1,5 +1,8 @@
+import shutil
 import sys
 import os
+import subprocess
+import tempfile
 from PyQt5.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -16,6 +19,7 @@ from PyQt5.QtCore import Qt
 from .model_viewer import ModelViewer
 from .data_analyzer import DataAnalyzer
 from .utils import load_model
+from .utils import AnimatedSequenceCanvas
 
 
 class MainWindow(QMainWindow):
@@ -65,6 +69,12 @@ class MainWindow(QMainWindow):
         main_layout.addWidget(self.tabs)
         self.setCentralWidget(main_widget)
 
+        # Check for FFmpeg availability for video caching
+        self.check_ffmpeg()
+        
+        # Configure animation cache settings
+        self.configure_animation_cache()
+
     def browse_model(self):
         """Open file dialog to select a model checkpoint"""
         file_path, _ = QFileDialog.getOpenFileName(
@@ -94,6 +104,50 @@ class MainWindow(QMainWindow):
 
             # Switch to the model viewer tab
             self.tabs.setCurrentIndex(0)
+
+    def check_ffmpeg(self):
+        """Check if FFmpeg is available for video cache generation"""
+        try:
+            # Try to run ffmpeg -version
+            subprocess.run(
+                ["ffmpeg", "-version"], 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.PIPE, 
+                check=True
+            )
+            print("FFmpeg is available for video caching")
+        except (subprocess.SubprocessError, FileNotFoundError):
+            # If ffmpeg command fails, show a warning
+            print("WARNING: FFmpeg is not available. Video caching will be disabled.")
+            
+            # Disable video caching in all AnimatedSequenceCanvas instances
+            AnimatedSequenceCanvas.create_animation_video = lambda self, output_path: None
+    
+    def configure_animation_cache(self):
+        """Configure the animation cache settings"""
+        # Default cache settings
+        cache_dir = os.path.join(tempfile.gettempdir(), "pose_animation_cache")
+        # remove and create new if exists
+        if os.path.exists(cache_dir):
+            shutil.rmtree(cache_dir)
+        os.makedirs(cache_dir, exist_ok=True)
+        max_cache_size_mb = 100
+
+        # Update any existing animation canvases
+        for canvas in self.findChildren(AnimatedSequenceCanvas):
+            canvas.cache_dir = cache_dir
+            canvas.max_cache_size_mb = max_cache_size_mb
+    
+    def closeEvent(self, event):
+        """Application shutdown event"""
+        # Perform cache cleanup if needed
+        for canvas in self.findChildren(AnimatedSequenceCanvas):
+            # Only clean up video files not currently in use
+            canvas.cleanup_video_cache(force_all=True)
+            print("Cleaned up all video cache")
+        
+        # Proceed with normal event handling
+        super().closeEvent(event)
 
 
 def main():

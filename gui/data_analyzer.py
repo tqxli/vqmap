@@ -229,8 +229,11 @@ class DataAnalyzer(QWidget):
 
     def update_ui_state(self):
         """Update UI based on current state"""
-        self.embed_btn.setEnabled(
-            self.model is not None and self.config_path.text() != "No file selected"
+        enable_state = self.model is not None and self.config_path.text() != "No file selected"
+        self.embed_btn.setEnabled(enable_state)
+        # change color to green if enabled, red if disabled
+        self.embed_btn.setStyleSheet(
+            "background-color: #99ff99;" if enable_state else "background-color: #ff9999;"
         )
 
     def embed_dataset(self):
