@@ -87,12 +87,21 @@ class MainWindow(QMainWindow):
         if file_path:
             self.model_path_label.setText(file_path)
             self.load_button.setEnabled(True)
+            # change color to green
+            self.load_button.setStyleSheet("background-color: #99ff99;")
 
     def load_selected_model(self):
         """Load the selected model and update all tabs"""
         model_path = self.model_path_label.text()
         if model_path == "No model selected":
             return
+        # update button to show loading state
+        self.load_button.setText("Loading...")
+        self.load_button.setEnabled(False)
+        self.load_button.setStyleSheet("background-color: #ffcc66;")  # Orange for in-progress
+
+        # Force the UI to update before loading the model
+        QApplication.processEvents()
 
         model = load_model(model_path)
         if model:
@@ -104,6 +113,11 @@ class MainWindow(QMainWindow):
 
             # Switch to the model viewer tab
             self.tabs.setCurrentIndex(0)
+            
+            # reset button text and color to normal
+            self.load_button.setText("Load Model")
+            self.load_button.setEnabled(True)
+            self.load_button.setStyleSheet("")
 
     def check_ffmpeg(self):
         """Check if FFmpeg is available for video cache generation"""
