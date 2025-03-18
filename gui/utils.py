@@ -193,9 +193,10 @@ class AnimatedSequenceCanvas(QWidget):
 
 
 class ModelWrapper:
-    def __init__(self, cfg_model, model):
+    def __init__(self, cfg_model, model, checkpoint_path):
         self.cfg_model = cfg_model
         self.model = model
+        self.checkpoint_path = checkpoint_path
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
         assert hasattr(
@@ -349,7 +350,7 @@ def load_model(model_path):
         model = model.eval()
 
         # Instantiate model wrapper for easier visualization
-        model_wrapper = ModelWrapper(cfg_ckpt, model)
+        model_wrapper = ModelWrapper(cfg_ckpt, model, model_path)
         return model_wrapper
 
     except Exception as e:

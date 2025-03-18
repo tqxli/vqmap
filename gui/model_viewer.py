@@ -124,6 +124,7 @@ class ModelViewer(QWidget):
         self.annotations = {}  # Dictionary to store annotations: {(i,j): "label"}
         self.label_colors = {}  # Dictionary to map labels to colors
         self.checkpoint_dir = None  # Will store the directory of the loaded model
+        self.experiment_root = None # by default the upper directory of the checkpoint dir
 
         # Main layout
         layout = QVBoxLayout(self)
@@ -273,9 +274,9 @@ class ModelViewer(QWidget):
         # Set checkpoint directory for saving/loading annotations
         if hasattr(model, "checkpoint_path"):
             self.checkpoint_dir = os.path.dirname(model.checkpoint_path)
-
+            self.experiment_root = os.path.dirname(self.checkpoint_dir)
             # Try to load existing annotations
-            annotation_file = os.path.join(self.checkpoint_dir, "code_annotations.json")
+            annotation_file = os.path.join(self.experiment_root, "code_annotations.json")
             if os.path.exists(annotation_file):
                 try:
                     with open(annotation_file, "r") as f:
@@ -585,11 +586,11 @@ class ModelViewer(QWidget):
 
     def save_annotations(self):
         """Save annotations to a JSON file in the checkpoint directory"""
-        if not self.checkpoint_dir:
-            self.checkpoint_dir = QFileDialog.getExistingDirectory(
-                self, "Select Checkpoint Directory", ""
+        if not self.experiment_root:
+            self.experiment_root = QFileDialog.getExistingDirectory(
+                self, "Select Save Directory", ""
             )
-            if not self.checkpoint_dir:
+            if not self.experiment_root:
                 return
 
         if not self.annotations:
@@ -606,7 +607,7 @@ class ModelViewer(QWidget):
             }
 
             # Save to file
-            filename = os.path.join(self.checkpoint_dir, "code_annotations.json")
+            filename = os.path.join(self.experiment_root, "code_annotations.json")
             with open(filename, "w") as f:
                 json.dump(data, f, indent=2)
 
@@ -618,14 +619,14 @@ class ModelViewer(QWidget):
 
     def load_annotations(self):
         """Load annotations from a JSON file"""
-        if not self.checkpoint_dir:
-            self.checkpoint_dir = QFileDialog.getExistingDirectory(
-                self, "Select Checkpoint Directory", ""
+        if not self.experiment_root:
+            self.experiment_root = QFileDialog.getExistingDirectory(
+                self, "Select Save Directory", ""
             )
-            if not self.checkpoint_dir:
+            if not self.experiment_root:
                 return
 
-        filename = os.path.join(self.checkpoint_dir, "code_annotations.json")
+        filename = os.path.join(self.experiment_root, "code_annotations.json")
 
         if not os.path.exists(filename):
             QMessageBox.warning(
