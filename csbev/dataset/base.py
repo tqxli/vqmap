@@ -3,12 +3,14 @@ from copy import deepcopy
 import os
 from typing import List, Literal
 import numpy as np
-from omegaconf import OmegaConf
 import torch
 from torch.utils.data import Dataset
 from tqdm import tqdm
 import scipy.io as sio
 from loguru import logger
+from omegaconf import OmegaConf
+
+from multiprocessing import Pool
 
 from csbev.dataset.skeleton import SkeletonProfile
 from csbev.dataset.ik import quaternion_to_cont6d_np
@@ -31,8 +33,10 @@ class BasePoseDataset(Dataset):
         scale: float = 1.0,
         seqlen: int = 128,
         t_downsample: int = 1,
-        t_stride: int = 128,
+        t_stride: int | None = None,
         t_jitter: int | None = None,
+        torch_processing: bool = True,
+        torch_bs: int = 16,
     ):
         self.dataroot = dataroot
         self.datapaths = datapaths if datapaths is not None else dataroot
@@ -48,20 +52,37 @@ class BasePoseDataset(Dataset):
 
         self.seqlen = seqlen
         self.t_downsample = t_downsample
-        self.t_stride = t_stride
+        self.t_stride = t_stride if t_stride is not None else seqlen
+        assert self.t_stride <= seqlen and seqlen % self.t_stride == 0
         self.t_jitter = t_jitter is not None
         self.t_jitter_range = t_jitter
+        
+        # process with torch Tensors for acceleration
+        self.torch_processing = torch_processing
+        self.torch_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+        self.torch_bs = torch_bs # actual frame number = seqlen * torch_bs
+        logger.info(f"Processing with torch: {torch_processing} {self.torch_device}")
 
+        self.pose3d, self.num_frames = [], []
+        self.raw_num_frames = 0
+
+        self.data_preload()
         self._load_data()
+
+    def data_preload(self):
+        # placeholder for preloading data, not doing anything in the base class
+        pass
 
     def _load(self, dp):
         data = sio.loadmat(dp)["pred"]
-        
         data = np.squeeze(data)
-        
         data = np.transpose(data, (0, 2, 1))
         assert data.shape[-1] == 3
         self.raw_num_frames += len(data)
+        
+        if self.torch_processing:
+            data = torch.from_numpy(data).float().to(self.torch_device)
+        
         return data
 
     def _scale(self, data: np.ndarray):
@@ -87,13 +108,18 @@ class BasePoseDataset(Dataset):
         if not self.alignment:
             return joints3D
 
-        aligned = np.zeros(
-            (joints3D.shape[0], self.skeleton.n_keypoints, self.skeleton.datadim)
-        )
-        for i, seq in enumerate(joints3D.reshape(-1, self.seqlen, *joints3D.shape[1:])):
-            aligned[i * self.seqlen : (i + 1) * self.seqlen] = self.skeleton.align_pose(
-                seq, alignment=self.alignment
-            )
+        aligned_shape = (joints3D.shape[0], self.skeleton.n_keypoints, self.skeleton.datadim)
+        if self.torch_processing:
+            aligned = torch.zeros(aligned_shape, device=self.torch_device)
+        else:
+            aligned = np.zeros(aligned_shape)
+        
+        n_frames = joints3D.shape[0]
+        bs = self.torch_bs if self.torch_processing else 1
+        step = self.seqlen * bs
+        for start in range(0, n_frames, self.seqlen * bs):
+            end = start + step
+            aligned[start:end] = self.skeleton.align_pose(joints3D[start:end], alignment=self.alignment)
 
         return aligned
 
@@ -127,19 +153,27 @@ class BasePoseDataset(Dataset):
         data = self._convert(self.data_rep, data)
         return data
 
-    def _load_data(self):
-        self.pose3d, self.num_frames = [], []
-        self.raw_num_frames = 0
+    def _load_single(self, dp):
+        data = self._load(dp)
+        data = self._process_data(data)
+        n_frames = data.shape[0]
+        return data, n_frames
 
-        for dp in tqdm(self.datapaths, desc="Preprocess"):
-            data = self._load(dp)
-            data = self._process_data(data)
-            self.pose3d.append(data)
-            self.num_frames.append(data.shape[0])
-
-        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
+    def _postproc_data(self):
+        if self.torch_processing:
+            self.pose3d = torch.concatenate(self.pose3d, dim=0).detach().cpu()
+        else:
+            self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
         logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
         self.pose_dim = self.pose3d.shape[-1]
+
+    def _load_data(self):
+        for dp in tqdm(self.datapaths, desc="Preprocess"):
+            data, n_frames = self._load_single(dp)
+            self.pose3d.append(data)
+            self.num_frames.append(n_frames)
+
+        self._postproc_data()
 
     def __len__(self):
         return (sum(self.num_frames) - self.seqlen) // self.t_stride + 1
@@ -171,6 +205,16 @@ class BasePoseDataset(Dataset):
 class SimpleCompiledPoseDataset(BasePoseDataset):
     """A single data file containing all mocap data as a Dict[expname, np.ndarray].
     """
+    def data_preload(self):
+        self.predictions = np.load(self.dataroot, allow_pickle=True)[()]
+
+    def _load(self, dp):
+        data = self.predictions[dp]
+        if self.torch_processing:
+            data = torch.from_numpy(data).float().to(self.torch_device)
+        self.raw_num_frames += len(data)
+        return data
+
 
     def _load_data(self):
         predictions = np.load(self.dataroot, allow_pickle=True)[()]

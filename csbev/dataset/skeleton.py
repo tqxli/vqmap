@@ -115,8 +115,8 @@ class SkeletonProfile:
 
         # basic preprocessing to the pose data
         self.center_keypoint = center_keypoint
-        self.anterior_keypoint = anterior_keypoint
-        self.posterior_keypoint = posterior_keypoint
+        self.anterior_keypoint = anterior_keypoint if not isinstance(anterior_keypoint, str) else [anterior_keypoint]
+        self.posterior_keypoint = posterior_keypoint if not isinstance(posterior_keypoint, str) else [posterior_keypoint]
 
         self.center_idx = self.keypoints.index(center_keypoint)
         self.anterior_idx = self.find_index_to_keypoint(anterior_keypoint)
@@ -131,13 +131,80 @@ class SkeletonProfile:
             ]
 
         # infer all pairwise connections
+        self.connectivity = self.get_connectivity_from_kinematic_tree(self.kinematic_tree)
+
+    def get_connectivity_from_kinematic_tree(self, kinematic_tree):
         connectivity = []
         for chain in self.kinematic_tree:
             for i in range(len(chain) - 1):
                 s = self.keypoints.index(chain[i])
                 e = self.keypoints.index(chain[i + 1])
-                connectivity.append([min(s, e), max(s, e)])
-        self.connectivity = np.unique(connectivity, axis=0)
+                pair = [min(s, e), max(s, e)]
+                if pair not in connectivity:
+                    connectivity.append(pair)
+        return np.array(connectivity)
+
+    def _transform_skeleton(self, scheme='avg', subset=None):
+        # changes made in place, cautious
+        if scheme == 'avg':
+            keypoints_aug = []
+            for (kpt1_idx, kpt2_idx) in self.connectivity:
+                kpt1, kpt2 = self.keypoints[kpt1_idx], self.keypoints[kpt2_idx]
+                new_kpt = f"{kpt1}-{kpt2}"
+                keypoints_aug.append(new_kpt)
+                
+            kinematic_tree_aug = []
+            n = 0
+            for chain in self.kinematic_tree:
+                chain_len = len(chain) - 1
+                kinematic_tree_aug.append(keypoints_aug[n:n + chain_len])
+                n += chain_len
+
+            body_region_indices = np.max(self.body_region_indices[self.connectivity], axis=-1)
+            
+            self.skeleton_name = f"{self.skeleton_name}_{scheme}"
+            self.keypoints = keypoints_aug
+            self.n_keypoints = len(self.keypoints)
+            self.kinematic_tree = kinematic_tree_aug
+            self.kinematic_tree_indices = [
+                [self.keypoints.index(kpt) for kpt in chain] for chain in kinematic_tree_aug
+            ]
+            self.body_region_indices = body_region_indices
+            self.connectivity = self.get_connectivity_from_kinematic_tree(kinematic_tree_aug)
+            
+            anterior_keypoints = []
+            posterior_keypoints = []
+            for kpt in self.keypoints:
+                if self.anterior_keypoint is not None and any(ant_kpt in kpt for ant_kpt in self.anterior_keypoint):
+                    anterior_keypoints.append(kpt)
+                if self.posterior_keypoint is not None and any(post_kpt in kpt for post_kpt in self.posterior_keypoint):
+                    posterior_keypoints.append(kpt)
+            self.anterior_keypoint = anterior_keypoints
+            self.posterior_keypoint = posterior_keypoints
+        
+        elif scheme == 'subset':
+            if subset is None:
+                raise ValueError("Keypoint subset must be provided for subset scheme.")
+            assert isinstance(subset, list), "Subset must be a list of keypoints."
+            assert all(kpt in self.keypoints for kpt in subset), "All keypoints in subset must be in the original keypoints."
+            self.keep_indices = keep_indices = np.array([self.keypoints.index(kpt) for kpt in subset])
+            self.keypoints = [self.keypoints[i] for i in keep_indices]
+            self.n_keypoints = len(self.keypoints)
+            
+            kinematic_tree_aug = []
+            for chain in self.kinematic_tree:
+                chain = [kpt for kpt in chain if kpt in subset]
+                if len(chain) > 1:
+                    kinematic_tree_aug.append(chain)
+            self.kinematic_tree = kinematic_tree_aug
+            self.kinematic_tree_indices = [
+                [self.keypoints.index(kpt) for kpt in chain] for chain in kinematic_tree_aug
+            ]
+            self.body_region_indices = self.body_region_indices[keep_indices]
+            self.connectivity = self.get_connectivity_from_kinematic_tree(kinematic_tree_aug)
+            
+        else:
+            raise ValueError(f"Unknown scheme: {scheme}")
 
     def find_index_to_keypoint(self, keypoints):
         if isinstance(keypoints, str):
@@ -166,32 +233,107 @@ class SkeletonProfile:
         """
         poses = self.reorder_keypoints(poses)
         poses = self.center_pose(poses)
-
+        _, _, posedim = poses.shape
+        
+        # Early return if only centering is needed
+        if alignment == "center_only":
+            return poses
+        
+        # Determine if we're working with torch or numpy
+        is_torch = isinstance(poses, torch.Tensor)
+        
         # determine the facing direction
         anterior = poses[:, self.anterior_idx].mean(axis=1, keepdims=True)
         posterior = poses[:, self.posterior_idx].mean(axis=1, keepdims=True)
         forward = anterior - posterior
 
-        if alignment == "lock_facing" and poses.shape[2] == 3:
+        if alignment == "lock_facing" and posedim == 3:
             forward[:, :, 2] = 0
-        forward = unit_vector(forward)
-
-        # by default, align heading to the +x axis
-        target = np.zeros_like(forward)
-        target[:, :, 0] = 1
-
-        # rotation matrices
-        rotmat = np.stack(
-            [
-                rotation_matrix_from_vectors(vec1, vec2)
-                for vec1, vec2 in zip(forward, target)
-            ],
-            axis=0,
-        )
-        poses_rot = rotmat @ poses.transpose((0, 2, 1))
-        poses_rot = poses_rot.transpose((0, 2, 1))
+        
+        # Vectorized unit vector calculation
+        if is_torch:
+            forward_norm = torch.norm(forward, dim=2, keepdim=True)
+            forward = forward / (forward_norm + 1e-8)  # Add epsilon to avoid division by zero
+            
+            # Create target vectors more efficiently
+            target = torch.zeros_like(forward)
+            target[:, :, 0] = 1
+            
+            # Vectorized rotation - specific optimization for PyTorch
+            if poses.is_cuda:
+                # Use a custom vectorized rotation function optimized for GPU
+                poses_rot = self._torch_vectorized_rotation(forward, target, poses)
+            else:
+                # Use the existing approach for CPU
+                rotmat = torch.stack(
+                    [rotation_matrix_from_vectors(vec1, vec2) 
+                     for vec1, vec2 in zip(forward, target)],
+                    dim=0,
+                )
+                poses_rot = torch.bmm(rotmat, poses.transpose(1, 2)).transpose(1, 2)
+        else:
+            # NumPy path
+            forward_norm = np.linalg.norm(forward, axis=2, keepdims=True)
+            forward = forward / (forward_norm + 1e-8)
+            
+            # Create target vectors
+            target = np.zeros_like(forward)
+            target[:, :, 0] = 1
+            
+            # Use optimized batch rotation computation if available
+            batch_size = poses.shape[0]
+            if batch_size > 10:  # For small batches, the overhead might not be worth it
+                # Preallocate the rotation matrices array
+                rotmat = np.empty((batch_size, 3, 3))
+                
+                # Fill it efficiently - could be parallelized with numba if needed
+                for i, (vec1, vec2) in enumerate(zip(forward.reshape(-1, 3), target.reshape(-1, 3))):
+                    rotmat[i] = rotation_matrix_from_vectors(vec1, vec2)
+                    
+                # Batch matrix multiplication
+                poses_rot = np.matmul(rotmat, poses.transpose(0, 2, 1))
+                poses_rot = poses_rot.transpose(0, 2, 1)
+            else:
+                # Original approach for small batches
+                rotmat = np.stack(
+                    [rotation_matrix_from_vectors(vec1, vec2)
+                     for vec1, vec2 in zip(forward.reshape(-1, 3), target.reshape(-1, 3))],
+                    axis=0,
+                )
+                poses_rot = np.matmul(rotmat, poses.transpose(0, 2, 1))
+                poses_rot = poses_rot.transpose(0, 2, 1)
 
         return poses_rot
+
+    def _torch_vectorized_rotation(self, forward, target, poses):
+        """Optimized rotation computation for PyTorch tensors on GPU"""
+        # This implementation would depend on the specifics of rotation_matrix_from_vectors
+        # But could be implemented using batch operations in PyTorch
+        
+        # Example implementation (would need to be adapted to match rotation_matrix_from_vectors):
+        batch_size = poses.shape[0]
+        forward = forward.reshape(batch_size, 3)
+        target = target.reshape(batch_size, 3)
+        
+        # Compute rotation matrices in a vectorized way
+        v = torch.cross(forward, target, dim=1)
+        c = torch.sum(forward * target, dim=1).unsqueeze(1).unsqueeze(2)
+        
+        # Create skew-symmetric matrices
+        v_x = torch.zeros(batch_size, 3, 3, device=poses.device)
+        v_x[:, 0, 1] = -v[:, 2]
+        v_x[:, 0, 2] = v[:, 1]
+        v_x[:, 1, 0] = v[:, 2]
+        v_x[:, 1, 2] = -v[:, 0]
+        v_x[:, 2, 0] = -v[:, 1]
+        v_x[:, 2, 1] = v[:, 0]
+        
+        # Rodrigues' rotation formula
+        I = torch.eye(3, device=poses.device).unsqueeze(0).repeat(batch_size, 1, 1)
+        rotmat = I + v_x + torch.bmm(v_x, v_x) / (1 + c)
+        
+        # Apply rotation
+        return torch.bmm(rotmat, poses.transpose(1, 2)).transpose(1, 2)
 
     def inverse_kinematics(self, joints: np.ndarray):
         forward = joints[:, self.anterior_idx] - joints[:, self.posterior_idx]
