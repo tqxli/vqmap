@@ -1,21 +1,16 @@
-from PyQt5.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QFileDialog,
-    QProgressBar,
-    QGridLayout,
-    QScrollArea,
-)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
-import numpy as np
 import os
-from hydra import initialize, compose
-from hydra.utils import instantiate
 
-from .utils import MatplotlibCanvas, visualize_pose_sequence, AnimatedSequenceCanvas
+import numpy as np
+import torch
+from hydra import compose, initialize
+from hydra.utils import instantiate
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtWidgets import (QFileDialog, QGridLayout, QHBoxLayout, QLabel,
+                             QProgressBar, QPushButton, QScrollArea,
+                             QVBoxLayout, QWidget)
+
+from .utils import (AnimatedSequenceCanvas, MatplotlibCanvas,
+                    visualize_pose_sequence)
 
 
 class CodeCell(QPushButton):
@@ -50,7 +45,6 @@ class CodeCell(QPushButton):
 
 
 class EmbeddingThread(QThread):
-    progress = pyqtSignal(int)
     result = pyqtSignal(dict)
 
     def __init__(self, model, config_path):
@@ -68,9 +62,15 @@ class EmbeddingThread(QThread):
     def run(self):
         """Run the embedding process in a separate thread"""
         try:
+            # Set priority when the thread is actually running
+            self.setPriority(QThread.HighestPriority)
+            
             datasets = self.model.load_dataset_from_cfg(self.cfg)
             codes, pose3d, skeleton_name = self.model.embed(datasets)
             results = self.model.compute_code_statistics(codes, pose3d, skeleton_name)
+
+            torch.cuda.empty_cache()
+
             self.skeleton_name = skeleton_name
             self.result.emit(results)
         except Exception as e:
@@ -151,7 +151,7 @@ class DataAnalyzer(QWidget):
         # Canvas for sequence visualization
         # self.canvas = MatplotlibCanvas(self, width=6, height=6)
         # viz_layout.addWidget(self.canvas)
-        n_rows = 4
+        n_rows = 3
         n_cols = 2
         plot_args = {
             "linewidth": 0.5,

@@ -1,25 +1,17 @@
-import shutil
-import sys
 import os
+import shutil
 import subprocess
+import sys
 import tempfile
-from PyQt5.QtWidgets import (
-    QApplication,
-    QMainWindow,
-    QTabWidget,
-    QFileDialog,
-    QVBoxLayout,
-    QHBoxLayout,
-    QPushButton,
-    QLabel,
-    QWidget,
-)
-from PyQt5.QtCore import Qt
 
-from .model_viewer import ModelViewer
+from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import (QApplication, QFileDialog, QHBoxLayout, QLabel,
+                             QMainWindow, QPushButton, QTabWidget, QVBoxLayout,
+                             QWidget)
+
 from .data_analyzer import DataAnalyzer
-from .utils import load_model
-from .utils import AnimatedSequenceCanvas
+from .model_viewer import ModelViewer
+from .utils import AnimatedSequenceCanvas, load_model
 
 
 class MainWindow(QMainWindow):

@@ -1,37 +1,28 @@
-from collections import defaultdict
+import hashlib
 import os
 import sys
+import tempfile
+from collections import defaultdict
+
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from torch.utils.data import DataLoader
 from hydra.utils import instantiate
-import tempfile
-import hashlib
-
-from PyQt5.QtWidgets import (
-    QMessageBox,
-    QVBoxLayout,
-    QWidget,
-    QLabel,
-    QPushButton,
-    QHBoxLayout,
-)
-import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg
-from PyQt5.QtCore import QTimer, Qt, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QUrl, pyqtSignal
 from PyQt5.QtMultimedia import QMediaContent, QMediaPlayer
 from PyQt5.QtMultimediaWidgets import QVideoWidget
-from PyQt5.QtCore import QUrl
+from PyQt5.QtWidgets import (QHBoxLayout, QLabel, QMessageBox, QPushButton,
+                             QVBoxLayout, QWidget)
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from csbev.dataset.loader import prepare_datasets, prepare_dataloaders
 from csbev.core.inference import load_checkpoint
+from csbev.dataset.loader import prepare_dataloaders, prepare_datasets
 from csbev.utils.run import move_data_to_device
-from csbev.utils.visualization import (
-    reset_rcparams,
-    make_pose_seq_overlay,
-    visualize_pose,
-)
+from csbev.utils.visualization import (make_pose_seq_overlay, reset_rcparams,
+                                       visualize_pose)
 
 
 class MatplotlibCanvas(FigureCanvasQTAgg):
@@ -177,7 +168,7 @@ class AnimatedSequenceCanvas(QWidget):
         """Create and save an animation video of the sequence"""
         import matplotlib
         from matplotlib.animation import FuncAnimation
-        
+
         # Create a new figure for the animation
         temp_fig = plt.figure(figsize=self.fig.get_size_inches())
         temp_ax = temp_fig.add_subplot(111, projection='3d')
@@ -396,7 +387,7 @@ class ModelWrapper:
 
         return sequences_all
 
-    def load_dataset_from_cfg(self, cfg, splits=["val"]):
+    def load_dataset_from_cfg(self, cfg, splits=["full"]):
         datasets, skeletons = prepare_datasets(cfg, splits=splits)
         return datasets[splits[0]]
 
@@ -418,7 +409,7 @@ class ModelWrapper:
             dataset, shuffle=False, **self.cfg_model.dataloader["val"]
         )
         codes = []
-        for batch in dataloader:
+        for batch in tqdm(dataloader, desc="Embedding dataset"):
             batch = move_data_to_device(batch, self.device)
             batch["tag_in"] = batch["tag_out"] = dataset_name
             z, (_, info), _ = self.model.encode(batch)
@@ -427,9 +418,10 @@ class ModelWrapper:
             )  # [num_codes, num_codebooks]
             codes.append(mapped_codes)
         codes = torch.cat(codes, dim=0)
+        codes = codes.detach().cpu()
         print(f"Saving embeddings {codes.shape} for {dataset_name} to {savedir}")
-        torch.save(codes, os.path.join(savedir, f"{dataset_name}.pt"))
-        return codes.detach().cpu().numpy(), pose3d, dataset_name
+        torch.save(codes, savepath)
+        return codes.numpy(), pose3d, dataset_name
 
     def compute_code_statistics(
         self, codes, pose3d, dataset_name, n_sequences=10, duration=25
@@ -449,7 +441,7 @@ class ModelWrapper:
 
         # sample random sequences for each code
         code_to_sequences = {}
-        for code_idx in code_frame_mapper.keys():
+        for code_idx in tqdm(code_frame_mapper.keys(), desc="Sampling sequences"):
             n_codes_tot = code_counts[code_idx[0], code_idx[1]]
             rand_code_indices = np.random.permutation(code_frame_mapper[code_idx])
             rand_frame_indices = rand_code_indices * code_duration

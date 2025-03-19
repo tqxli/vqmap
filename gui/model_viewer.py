@@ -1,34 +1,21 @@
-from PyQt5.QtWidgets import (
-    QWidget,
-    QVBoxLayout,
-    QGridLayout,
-    QPushButton,
-    QLabel,
-    QScrollArea,
-    QHBoxLayout,
-    QComboBox,
-    QLineEdit,
-    QColorDialog,
-    QInputDialog,
-    QFileDialog,
-    QFrame,
-    QListWidget,
-    QListWidgetItem,
-    QMenu,
-    QAction,
-    QMessageBox,
-)
-from PyQt5.QtGui import QImage, QPixmap, QIcon, QColor
-from PyQt5.QtCore import Qt, pyqtSignal, QSize, QEvent
-from matplotlib import pyplot as plt
-import numpy as np
 import io
 import json
 import os
-from matplotlib.colors import to_hex, to_rgb
 import random
 
-from .utils import MatplotlibCanvas, visualize_pose_sequence, AnimatedSequenceCanvas
+import numpy as np
+from matplotlib import pyplot as plt
+from matplotlib.colors import to_hex, to_rgb
+from PyQt5.QtCore import QEvent, QSize, Qt, pyqtSignal
+from PyQt5.QtGui import QColor, QIcon, QImage, QPixmap
+from PyQt5.QtWidgets import (QAction, QColorDialog, QComboBox, QFileDialog,
+                             QFrame, QGridLayout, QHBoxLayout, QInputDialog,
+                             QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                             QMenu, QMessageBox, QPushButton, QScrollArea,
+                             QVBoxLayout, QWidget)
+
+from .utils import (AnimatedSequenceCanvas, MatplotlibCanvas,
+                    visualize_pose_sequence)
 
 
 class CodeButton(QPushButton):
