@@ -327,13 +327,17 @@ class SkeletonProfile:
         v_x[:, 1, 2] = -v[:, 0]
         v_x[:, 2, 0] = -v[:, 1]
         v_x[:, 2, 1] = v[:, 0]
-        
         # Rodrigues' rotation formula
         I = torch.eye(3, device=poses.device).unsqueeze(0).repeat(batch_size, 1, 1)
-        rotmat = I + v_x + torch.bmm(v_x, v_x) / (1 + c)
+        
+        # avoid numerical nan issues
+        div = 1 + c
+        div[div == 0] = 1e-8  # prevent division by zero
+        rotmat = I + v_x + torch.bmm(v_x, v_x) / div
         
         # Apply rotation
-        return torch.bmm(rotmat, poses.transpose(1, 2)).transpose(1, 2)
+        rotated = torch.bmm(rotmat, poses.transpose(1, 2)).transpose(1, 2)
+        return rotated
 
     def inverse_kinematics(self, joints: np.ndarray):
         forward = joints[:, self.anterior_idx] - joints[:, self.posterior_idx]
