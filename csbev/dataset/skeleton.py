@@ -307,13 +307,13 @@ class SkeletonProfile:
 
     def _torch_vectorized_rotation(self, forward, target, poses):
         """Optimized rotation computation for PyTorch tensors on GPU"""
-        # This implementation would depend on the specifics of rotation_matrix_from_vectors
-        # But could be implemented using batch operations in PyTorch
-        
-        # Example implementation (would need to be adapted to match rotation_matrix_from_vectors):
         batch_size = poses.shape[0]
+        
         forward = forward.reshape(batch_size, 3)
         target = target.reshape(batch_size, 3)
+        
+        forward_norm = torch.norm(forward, dim=1, keepdim=True)
+        forward = forward / (forward_norm + 1e-8)
         
         # Compute rotation matrices in a vectorized way
         v = torch.cross(forward, target, dim=1)
@@ -330,10 +330,9 @@ class SkeletonProfile:
         # Rodrigues' rotation formula
         I = torch.eye(3, device=poses.device).unsqueeze(0).repeat(batch_size, 1, 1)
         
-        # avoid numerical nan issues
-        div = 1 + c
-        div[div == 0] = 1e-8  # prevent division by zero
-        rotmat = I + v_x + torch.bmm(v_x, v_x) / div
+        s = torch.norm(v, dim=1).unsqueeze(1).unsqueeze(2)
+        s[s == 0] = 1e-8
+        rotmat = I + v_x + torch.bmm(v_x, v_x) * (1 - c) / (s ** 2)
         
         # Apply rotation
         rotated = torch.bmm(rotmat, poses.transpose(1, 2)).transpose(1, 2)
