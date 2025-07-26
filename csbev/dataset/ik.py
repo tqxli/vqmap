@@ -470,7 +470,9 @@ def _rotate_vec_3d(vec1, vec2):
     kmat = np.array([[0, -v[2], v[1]], [v[2], 0, -v[0]], [-v[1], v[0], 0]])
     if s == 0:
         return np.eye(3)
-    rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+    # rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) * ((1 - c) / (s ** 2))
+    # s^2 = sin^2 = 1 - cos^2 = 1 - c^2; (1-c) / (1 - c^2) = 1 / (1+c)
+    rotation_matrix = np.eye(3) + kmat + kmat.dot(kmat) / (1+c)
     return rotation_matrix
 
 
@@ -485,4 +487,4 @@ def _rotate_vec_2d(vec1, vec2):
     x2, y2 = b
     c = np.dot(a, b)
     rotation_matrix = [[c, x2 * y1 - x1 * y2], [x1 * y2 - x2 * y1, c]]
-    return rotation_matrix
+    return np.array(rotation_matrix)

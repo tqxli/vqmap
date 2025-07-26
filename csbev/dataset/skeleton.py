@@ -118,7 +118,7 @@ class SkeletonProfile:
         self.anterior_keypoint = anterior_keypoint if not isinstance(anterior_keypoint, str) else [anterior_keypoint]
         self.posterior_keypoint = posterior_keypoint if not isinstance(posterior_keypoint, str) else [posterior_keypoint]
 
-        self.center_idx = self.keypoints.index(center_keypoint)
+        self.center_idx = self.find_index_to_keypoint(center_keypoint)
         self.anterior_idx = self.find_index_to_keypoint(anterior_keypoint)
         self.posterior_idx = self.find_index_to_keypoint(posterior_keypoint)
         self.align_direction = align_direction
@@ -135,14 +135,14 @@ class SkeletonProfile:
 
     def get_connectivity_from_kinematic_tree(self, kinematic_tree):
         connectivity = []
-        for chain in self.kinematic_tree:
+        for chain in kinematic_tree:
             for i in range(len(chain) - 1):
                 s = self.keypoints.index(chain[i])
                 e = self.keypoints.index(chain[i + 1])
                 pair = [min(s, e), max(s, e)]
                 if pair not in connectivity:
                     connectivity.append(pair)
-        return np.array(connectivity)
+        return np.unique(connectivity, axis=0)
 
     def _transform_skeleton(self, scheme='avg', subset=None):
         # changes made in place, cautious
@@ -220,7 +220,8 @@ class SkeletonProfile:
         return keypoints[:, self.reorder_indices]
 
     def center_pose(self, poses: np.ndarray | torch.Tensor):
-        return poses - poses[:, self.center_idx : self.center_idx + 1]
+        # return poses - poses[:, self.center_idx : self.center_idx + 1]
+        return poses - poses[:, self.center_idx].mean(axis=1, keepdims=True)
 
     def align_pose(
         self,
@@ -260,16 +261,18 @@ class SkeletonProfile:
             target[:, :, 0] = 1
             
             # Vectorized rotation - specific optimization for PyTorch
-            if poses.is_cuda:
+            if poses.is_cuda and posedim == 3:
                 # Use a custom vectorized rotation function optimized for GPU
                 poses_rot = self._torch_vectorized_rotation(forward, target, poses)
             else:
                 # Use the existing approach for CPU
-                rotmat = torch.stack(
-                    [rotation_matrix_from_vectors(vec1, vec2) 
+                forward, target = forward.detach().cpu().numpy(), target.detach().cpu().numpy()
+                rotmat = np.stack(
+                    [rotation_matrix_from_vectors(vec1, vec2)
                      for vec1, vec2 in zip(forward, target)],
-                    dim=0,
+                    axis=0,
                 )
+                rotmat = torch.from_numpy(rotmat).to(poses.device)
                 poses_rot = torch.bmm(rotmat, poses.transpose(1, 2)).transpose(1, 2)
         else:
             # NumPy path
@@ -287,7 +290,7 @@ class SkeletonProfile:
                 rotmat = np.empty((batch_size, 3, 3))
                 
                 # Fill it efficiently - could be parallelized with numba if needed
-                for i, (vec1, vec2) in enumerate(zip(forward.reshape(-1, 3), target.reshape(-1, 3))):
+                for i, (vec1, vec2) in enumerate(zip(forward.reshape(-1, posedim), target.reshape(-1, posedim))):
                     rotmat[i] = rotation_matrix_from_vectors(vec1, vec2)
                     
                 # Batch matrix multiplication
@@ -297,7 +300,7 @@ class SkeletonProfile:
                 # Original approach for small batches
                 rotmat = np.stack(
                     [rotation_matrix_from_vectors(vec1, vec2)
-                     for vec1, vec2 in zip(forward.reshape(-1, 3), target.reshape(-1, 3))],
+                     for vec1, vec2 in zip(forward.reshape(-1, posedim), target.reshape(-1, posedim))],
                     axis=0,
                 )
                 poses_rot = np.matmul(rotmat, poses.transpose(0, 2, 1))

@@ -41,7 +41,8 @@ def split_datapaths(
             candidates += c 
     # a compiled data file containing multiple experiments
     elif os.path.isfile(dataroot):
-        _data = np.load(dataroot, allow_pickle=True)[()]
+        _data = np.load(dataroot, allow_pickle=True)
+        _data = _data[()] if dataroot.endswith('.npy') else _data
         if isinstance(_data, dict) and split_cfg.method == "fraction":
             datapaths = candidates = list(_data.keys())
             del _data
@@ -128,7 +129,7 @@ def prepare_datasets(cfg: DictConfig, splits: List[str] = ["train", "val"]):
 
         # Parse paths for train/val/inference
         datapaths = split_datapaths(dataroot, dataset_type, _dataset_cfg.split)
-        datapaths = {k: sorted(v) for k, v in datapaths.items()}
+        datapaths = {k: sorted(list(set(v))) for k, v in datapaths.items()}
         if (
             (not os.path.isfile(dataroot))
             and splits == ["full"]
