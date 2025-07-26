@@ -22,16 +22,20 @@ def automatic_experiment_naming(cfg: DictConfig) -> str:
         encoder_cfg = cfg.model.encoder.encoder_shared
     else:
         encoder_cfg = cfg.model.encoder
-    name += f"_enc{encoder_cfg.n_ds}_s{encoder_cfg.strides}_hd{encoder_cfg.hidden_dim}_oc{encoder_cfg.out_channels}_depth{encoder_cfg.depth}_dilation{encoder_cfg.dilation}"
+    name += f"_enc{encoder_cfg.n_ds}_s{encoder_cfg.strides}_hd{encoder_cfg.hidden_dim}_oc{encoder_cfg.out_channels}_dep{encoder_cfg.depth}_dil{encoder_cfg.dilation}"
     
     if hasattr(cfg.model.encoder, "query_size"):
         name += f"_nh{cfg.model.encoder.num_heads}_nq{cfg.model.encoder.query_size}"
     
     # decoder
     decoder_cfg = cfg.model.decoder.decoder_shared    
-    name += f"_dec{decoder_cfg.n_ds}_s{decoder_cfg.strides}_hd{decoder_cfg.hidden_dim}_od{decoder_cfg.out_channels}_depth{decoder_cfg.depth}"
+    name += f"_dec{decoder_cfg.n_ds}_s{decoder_cfg.strides}_hd{decoder_cfg.hidden_dim}_od{decoder_cfg.out_channels}_dep{decoder_cfg.depth}"
 
     # bottleneck
+    if cfg.model.bottleneck._target_ == "csbev.model.quantizer.MultiGroupQuantizer":
+        quantizer_name = cfg.model.bottleneck.sub_quantizer._target_.split('.')[-1]
+        name += f"_{quantizer_name}"
+    
     if hasattr(cfg.model.bottleneck, "codebook_size"):
         name += f"_quantizer_cb{cfg.model.bottleneck.codebook_size}_dim{cfg.model.bottleneck.code_dim}"
     elif hasattr(cfg.model.bottleneck, "latent_vars"):
@@ -40,8 +44,8 @@ def automatic_experiment_naming(cfg: DictConfig) -> str:
         name += f"_vae{cfg.model.bottleneck.latent_dim}"
 
     # optimization
-    loss_cfg = cfg.model.loss_cfg
-    name += f"_recons{loss_cfg.recons}" #{loss_cfg.skew_factor}_{loss_cfg.normalization}_{loss_cfg.aggregation}"
+    # loss_cfg = cfg.model.loss_cfg
+    # name += f"_recons{loss_cfg.recons}" #{loss_cfg.skew_factor}_{loss_cfg.normalization}_{loss_cfg.aggregation}"
 
     # augmentation
     name += f"_lraug{cfg.train.augmentation.lr_flip_prob}loss{cfg.model.lambdas.assignment}_delay{cfg.model.loss_cfg.assignment_delay}"

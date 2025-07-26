@@ -1,6 +1,8 @@
 from __future__ import annotations
+import random
 from typing import Dict, List, Optional
 from itertools import product
+from einops import repeat
 import numpy as np
 import torch
 import torch.nn as nn
@@ -535,11 +537,17 @@ class MultiGroupQuantizer(nn.Module):
     def get_codevecs(self):
         combinations = product(*[range(nb_code) for nb_code in self.codebook_size])
         combinations = [combo for combo in combinations]
+        
+        # extract codebook
+        if isinstance(self.sub_quantizers[0], ResidualVQ):
+            codebooks = [sub_quantizer.codebooks[0] for sub_quantizer in self.sub_quantizers] #[num_cb, num_code, dim]
+        else:
+            codebooks = [sub_quantizer.codebook for sub_quantizer in self.sub_quantizers]
 
         codevecs = [
             torch.cat(
                 [
-                    self.sub_quantizers[i].codebook[combo[i]]
+                    codebooks[i][combo[i]]
                     for i in range(self.n_groups)
                 ],
                 dim=0,
@@ -584,6 +592,17 @@ class MultiGroupQuantizer(nn.Module):
             x_q = torch.cat(x_q, dim=1)  # [B, D, T]
 
         return x_q, loss, info
+
+    def quantize(self, x: torch.Tensor):
+        x = torch.split(x, self.code_dim, dim=1)
+
+        x_q = []
+        for i in range(self.n_groups):
+            _, q_res = self.sub_quantizers[i].quantize(x[i], return_latent=True)
+            q_cumsum = torch.cumsum(q_res, dim=0) #[n_res_cb, B, D, T]
+            x_q.append(q_cumsum)
+        x_q = torch.cat(x_q, dim=2)
+        return x_q
 
 
 class MixBottleneck(nn.Module):
@@ -653,16 +672,116 @@ class MixBottleneckv2(nn.Module):
         return z, loss, info_dis
         
 
+class ResidualVQ(nn.Module):
+    """ Follows Algorithm 1. in https://arxiv.org/pdf/2107.03312.pdf """
+    def __init__(
+        self,
+        num_quantizers,
+        **kwargs
+    ):
+        super().__init__()
+
+        self.num_quantizers = num_quantizers
+        self.layers = nn.ModuleList([QuantizeEMAReset(**kwargs) for _ in range(num_quantizers)])
+            
+    @property
+    def codebooks(self):
+        codebooks = [layer.codebook for layer in self.layers]
+        codebooks = torch.stack(codebooks, dim = 0)
+        return codebooks # 'q c d'
+    
+    def get_codes_from_indices(self, indices): #indices shape 'b n q' # dequantize
+        batch, quantize_dim = indices.shape[0], indices.shape[-1]
+        # because of quantize dropout, one can pass in indices that are coarse
+        # and the network should be able to reconstruct
+
+        if quantize_dim < self.num_quantizers:
+            indices = F.pad(indices, (0, self.num_quantizers - quantize_dim), value = -1)
+
+        # get ready for gathering
+        codebooks = repeat(self.codebooks, 'q c d -> q b c d', b = batch)
+        gather_indices = repeat(indices, 'b n q -> q b n d', d = codebooks.shape[-1])
+
+        # take care of quantizer dropout
+        mask = gather_indices == -1.
+        gather_indices = gather_indices.masked_fill(mask, 0) # have it fetch a dummy code to be masked out later
+
+        all_codes = codebooks.gather(2, gather_indices) # gather all codes
+
+        # mask out any codes that were dropout-ed
+        all_codes = all_codes.masked_fill(mask, 0.)
+
+        return all_codes # 'q b n d'
+
+    def get_codebook_entry(self, indices): #indices shape 'b n q'
+        all_codes = self.get_codes_from_indices(indices) #'q b n d'
+        latent = torch.sum(all_codes, dim=0) #'b n d'
+        latent = latent.permute(0, 2, 1)
+        return latent
+
+    def forward(self, x, return_all_codes = False, sample_codebook_temp = None):
+        quantized_out = 0.
+        residual = x
+
+        all_losses = []
+        all_infos = []
+        # go through the layers
+        for quantizer_index, layer in enumerate(self.layers):
+            quantized, loss, info = layer(residual)
+            # don't use += or -= which modifies the tensor in place, causing gradient issues
+            residual = residual - quantized.detach()
+            quantized_out = quantized_out + quantized
+            all_losses.append(loss)
+            all_infos.append(info)
+
+        # stack all losses and indices
+        all_losses = self._merge_loss_dict(all_losses)
+
+        return quantized_out, all_losses, all_infos[0]
+
+    def _merge_loss_dict(self, losses):
+        loss = {}
+        for k in losses[0]:
+            loss[k] = sum([loss_dict[k] for loss_dict in losses])
+        return loss
+    
+    def quantize(self, x, return_latent=False):
+        all_infos = []
+        quantized_out = 0.
+        residual = x
+        all_codes = []
+        for quantizer_index, layer in enumerate(self.layers):
+            quantized, loss, info = layer(residual)
+            residual = residual - quantized.detach()
+            quantized_out = quantized_out + quantized
+
+            all_infos.append(info)
+            all_codes.append(quantized)
+
+        all_codes = torch.stack(all_codes, dim=0)
+        if return_latent:
+            return all_infos, all_codes
+        return all_infos
+
+
 if __name__ == "__main__":
     from hydra import initialize, compose
     from hydra.utils import instantiate
+    from csbev.utils.run import count_parameters
 
     with initialize(config_path="../../configs", version_base=None):
-        cfg = compose(config_name="model/bottleneck/mix_v2.yaml")
-    print(cfg)
+        cfg = compose(config_name="model/bottleneck/quantizer_mg_res.yaml")
+
     bottleneck = instantiate(cfg.model.bottleneck)
 
     inputs = torch.randn(5, 64, 16)
     z, loss, info = bottleneck(inputs)
     print(z.shape)
     print(loss)
+    # for k, v in info[0].items():
+    #     if isinstance(v, torch.Tensor):
+    #         print(k, v.shape)
+    #     elif isinstance(v, list):
+    #         print(k, len(v))
+    #     else:
+    #         print(k, v)
