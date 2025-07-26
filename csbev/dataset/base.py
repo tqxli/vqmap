@@ -33,10 +33,15 @@ class BasePoseDataset(Dataset):
         scale: float = 1.0,
         seqlen: int = 128,
         t_downsample: int = 1,
+        t_upsample: None | int = None,
+        upsample_mode: Literal['repeat', 'interp'] = 'repeat',
         t_stride: int | None = None,
         t_jitter: int | None = None,
         torch_processing: bool = True,
         torch_bs: int = 16,
+        # frame_shuffle: bool = False,
+        shuffle: Literal[None, "frame", "all"] = None,
+        velocity_threshold: float | None = None,
     ):
         self.dataroot = dataroot
         self.datapaths = datapaths if datapaths is not None else dataroot
