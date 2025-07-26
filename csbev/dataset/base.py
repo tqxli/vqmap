@@ -307,11 +307,71 @@ class SimpleCompiledPoseDataset(BasePoseDataset):
             self.raw_num_frames += len(data)
             data = self._process_data(data)
             self.pose3d.append(data)
-            self.num_frames.append(data.shape[0])
+class SyntheticPoseDataset(SimpleCompiledPoseDataset):
+    """Generate synthetic dataset with augmented skeleton schemes,
+    which would not be easily resolved by switching the skeleton file in `configs/skeleton`.
+    """
+    def __init__(
+        self,
+        skeleton_augmentation: Literal[None, "avg", "subset"] = None,
+        skeleton_subset: List[str] = None,
+        *args,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        
+        self.skeleton_augmentation = skeleton_augmentation
+        self.skeleton_subset = skeleton_subset
+        if self.skeleton_augmentation == "subset":
+            assert skeleton_subset is not None, "Applying subset augmentation requires skeleton_subset to be specified during initialization."
+            self.skeleton_subset = OmegaConf.to_object(skeleton_subset)
+        
+        self._postprocess()
+    
+    def _postprocess(self):
+        if self.skeleton_augmentation == "avg":
+            connectivity = self.skeleton.connectivity
+            logger.info(f"Skeleton connectivity: {connectivity.shape}")
+            self.debug_vis_pose3d = deepcopy(self.pose3d[0])
+            self.pose3d = self.pose3d[:, connectivity, :].mean(dim=2) # average connected kpt pairs
+            
+            skeleton = deepcopy(self.skeleton)
+            skeleton._transform_skeleton(scheme=self.skeleton_augmentation)
+            self.skeleton_original = self.skeleton
+            self.skeleton = skeleton
 
-        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
-        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
-        self.pose_dim = self.pose3d.shape[-1]
+        elif self.skeleton_augmentation == "subset":
+            skeleton = deepcopy(self.skeleton)
+            skeleton._transform_skeleton(scheme=self.skeleton_augmentation, subset=self.skeleton_subset)
+            logger.info(f"Skeleton subset: {self.skeleton_subset}")
+            self.skeleton_original = self.skeleton
+            self.skeleton = skeleton
+            
+            self.debug_vis_pose3d = deepcopy(self.pose3d[0])
+            self.pose3d = self.pose3d[:, self.skeleton.keep_indices, :]
+        # else:
+        #     raise NotImplementedError
+    
+        logger.info(f"Augmented {self.skeleton_augmentation} dataset {self.name}: {self.pose3d.shape}")
+
+    def _vis_augmentation(self):
+        from csbev.utils.visualization import visualize_pose
+        import matplotlib.pyplot as plt
+        
+        fig = plt.figure(figsize=(10, 5))
+        axes = []
+        for i in range(2):
+            ax = fig.add_subplot(1, 2, i + 1, projection='3d')
+            axes.append(ax)
+        pose3d = deepcopy(self.pose3d[0])
+        for i, (data, title, skeleton) in enumerate(zip([self.debug_vis_pose3d, pose3d], ["Original", "Augmented"], [self.skeleton_original, self.skeleton])):
+            axes[i].set_title(title)
+            visualize_pose(
+                pose=data,
+                skeleton=skeleton,
+                ax=axes[i],
+            )
+        plt.show()
 
 
 class Rat7MDataset(BasePoseDataset):
