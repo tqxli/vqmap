@@ -2,6 +2,7 @@ import argparse
 import csv
 import json
 import os
+import tqdm
 from copy import deepcopy
 from typing import Literal
 import numpy as np
@@ -14,6 +15,7 @@ from lightning import seed_everything
 
 from csbev.utils.run import count_parameters
 from csbev.dataset.loader import filter_by_keys
+from csbev.model.quantizer import ResidualVQ
 
 
 device = "cuda:0"
@@ -116,10 +118,19 @@ class LatentActionClassifier(nn.Module):
         self.vae = vae
         for param in self.vae.parameters():
             param.requires_grad = False
-        for quantizer in self.vae.bottleneck.sub_quantizers:
-            quantizer.reinit_codebook = False
-            quantizer.freeze_codebook = True
-        
+
+        if isinstance(self.vae.bottleneck.sub_quantizers[0], ResidualVQ):
+            for sub_quantizer in self.vae.bottleneck.sub_quantizers:
+                for quantizer in sub_quantizer.layers:
+                    assert hasattr(quantizer, "reinit_codebook")
+                    quantizer.reinit_codebook = False
+                    quantizer.freeze_codebook = True
+            print("Properly fixed codebooks for RVQ")
+        else:
+            for quantizer in self.vae.bottleneck.sub_quantizers:
+                quantizer.reinit_codebook = False
+                quantizer.freeze_codebook = True
+
         self.input_type = input_type
         if input_type == "decoder":
             input_size = vae.decoder.decoder_shared.hidden_dim
@@ -189,11 +200,12 @@ def _forward_batch_converted(model, batch, tag_in, tag_out):
     outputs = model(batch)
     outputs = outputs.view(-1, outputs.shape[-1])
     return outputs
+    # return outputs, batch['action'].to(device).view(-1)
 
 
 def _forward_batch(model, batch):
     batch['x'] = batch['x'].reshape(*batch['x'].shape[:2], -1, 3)
-    # batch['tag_in'] = batch['tag_out'] = args.dataset
+    batch['tag_in'] = batch['tag_out'] = args.dataset
     for k, v in batch.items():
         if isinstance(v, torch.Tensor):
             batch[k] = v.to(device)
@@ -207,7 +219,11 @@ def _forward_batch(model, batch):
 def train_epoch(model, optimizer, criterion, train_loader):
     total_loss = []
     num_correct, num_tot = 0, 0
-    for i, batch in enumerate(train_loader):
+    loader = tqdm.tqdm(train_loader, desc="Training")
+    
+    model.train()
+    
+    for i, batch in enumerate(loader):
         optimizer.zero_grad()
 
         outputs, targets = _forward_batch(model, batch)
@@ -229,8 +245,12 @@ def evaluate_epoch(model, criterion, test_loader):
     num_correct, num_tot = 0, 0
     num_tot_by_class = np.zeros(9)
     num_correct_by_class = np.zeros(9)
+    
+    model.eval()
+    
     with torch.no_grad():
-        for i, batch in enumerate(test_loader):
+        loader = tqdm.tqdm(test_loader, desc="Testing")
+        for i, batch in enumerate(loader):
             outputs, targets = _forward_batch(model, batch)
             loss = criterion(outputs, targets)
             total_loss.append(loss.item())
@@ -250,7 +270,7 @@ def evaluate_epoch(model, criterion, test_loader):
 
 def prepare_rat23_dataset(seqlen):
     # rat23 dataset with labels
-    with initialize(config_path="../configs", version_base=None):
+    with initialize(config_path="../../configs", version_base=None):
         cfg = compose(config_name="dataset/rat23.yaml").dataset
         del cfg.split
     datapaths = sorted(list(np.load(cfg.dataroot, allow_pickle=True)[()].keys()))
@@ -274,7 +294,7 @@ def prepare_rat23_dataset(seqlen):
 
 def prepare_mouse23_dataset(seqlen):
     # mouse23 dataset with labels
-    with initialize(config_path="../configs", version_base=None):
+    with initialize(config_path="../../configs", version_base=None):
         cfg = compose(config_name="dataset/mouse23.yaml").dataset
         del cfg.split
     datapaths = sorted(list(np.load(cfg.dataroot, allow_pickle=True)[()].keys()))
