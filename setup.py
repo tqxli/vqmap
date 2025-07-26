@@ -7,7 +7,7 @@ setup(
     author="tianqingli",
     packages=find_packages(),
     python_requires=">=3.8",
-    requires=(
+    install_requires=[
         "torch",
         "matplotlib",
         "hydra-core",
@@ -16,5 +16,5 @@ setup(
         "wandb",
         "lightning",
         "scipy",
-    ),
+    ],
 )
