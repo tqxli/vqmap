@@ -58,6 +58,61 @@ class Conv1DDecoder(nn.Module):
         return x
 
 
+class Conv1DResidualDecoder(nn.Module):
+    def __init__(
+        self,
+        in_channels: int,
+        out_channels: int,
+        hidden_dim: int,
+        n_ds: int = 3,
+        strides: Union[list, int] = 2,
+        depth: int = 1,
+        dilation: int = 3,
+        activation: str = "relu",
+        normalization: str = "LN",
+        input_kernel_size: int = 3,
+        out_kernel_size: int = 3,
+        quant_size: int = 2,
+        merge_latent: bool = False,
+    ):
+        super().__init__()
+        self.quant_size = quant_size
+        self.quant_dim = [in_channels // quant_size] * quant_size
+        self.merge_latent = merge_latent
+        
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.hidden_dim = hidden_dim
+
+        code_channels = in_channels // self.quant_size
+        args = {
+            "in_channels": code_channels,
+            "out_channels": out_channels,
+            "hidden_dim": hidden_dim,
+            "n_ds": n_ds,
+            "strides": strides,
+            "depth": depth,
+            "dilation": dilation,
+            "activation": activation,
+            "normalization": normalization,
+            "input_kernel_size": input_kernel_size,
+            "out_kernel_size": out_kernel_size,
+        }
+        self.base_decoder = Conv1DDecoder(**args)
+        self.residual_decoder = Conv1DDecoder(**args)
+    
+    def forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+        base_x, res_x = torch.split(x, self.quant_dim, dim=1)
+        out_base = self.base_decoder(base_x, **kwargs)
+        out_res = self.residual_decoder(res_x, **kwargs)
+        
+        if self.merge_latent:
+            out = out_base + out_res
+        else:
+            out = torch.stack([out_base, out_res], dim=1)
+        return out
+
+
 class Conv1DDecoderBlock(nn.Module):
     def __init__(
         self,
@@ -123,7 +178,16 @@ class MODecoder(nn.Module):
             torch.Tensor: [B, C, T]
         """
         x = self.decoder_shared(x)
-        x = self.output_layers[batch_tag](x)
+
+        if len(x.shape) == 4:
+            x_base, x_res = x[:, 0], x[:, 1]
+            x_base = self.output_layers[batch_tag](x_base)
+            x_res = self.output_layers[batch_tag](x_res)
+            x = x_base + x_res
+        elif len(x.shape) == 3:
+            x = self.output_layers[batch_tag](x)
+        else:
+            raise ValueError(f"Invalid shape {x.shape} for output")
         return x
 
 
@@ -133,7 +197,7 @@ if __name__ == "__main__":
     from csbev.utils.run import count_parameters
 
     with initialize(config_path="../../configs", version_base=None):
-        cfg = compose(config_name="model/decoder/decoder_tcn.yaml")
+        cfg = compose(config_name="model/decoder/decoder_res.yaml")
 
     cfg.model.decoder.decoder_shared.depth = 1
 
