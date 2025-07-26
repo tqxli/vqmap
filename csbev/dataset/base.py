@@ -285,7 +285,9 @@ class SimpleCompiledPoseDataset(BasePoseDataset):
     """A single data file containing all mocap data as a Dict[expname, np.ndarray].
     """
     def data_preload(self):
-        self.predictions = np.load(self.dataroot, allow_pickle=True)[()]
+        self.predictions = np.load(self.dataroot, allow_pickle=True)
+        if self.dataroot.endswith('.npy'):
+            self.predictions = self.predictions[()]
 
     def _load(self, dp):
         data = self.predictions[dp]
@@ -319,9 +321,16 @@ class Rat7MDataset(BasePoseDataset):
         data = np.stack(data, axis=1)
         assert data.shape[-1] == 3
         self.raw_num_frames += len(data)
+
+        if self.torch_processing:
+            data = torch.from_numpy(data).float().to(self.torch_device)
         return data
 
     def _interp_nan(self, data: np.ndarray):
+        is_tensor = isinstance(data, torch.Tensor)
+        if is_tensor:
+            data = data.detach().cpu().numpy()
+        
         nans = np.isnan(data)
         fcn = lambda z: z.nonzero()[0]
         for joint_idx in range(data.shape[1]):
@@ -331,6 +340,9 @@ class Rat7MDataset(BasePoseDataset):
                     fcn(~nans[:, joint_idx, coord_idx]),
                     data[~nans[:, joint_idx, coord_idx], joint_idx, coord_idx],
                 )
+        if is_tensor:
+            data = torch.from_numpy(data).float().to(self.torch_device)
+        
         return data
 
     def _process_data(self, data: np.ndarray):
@@ -357,6 +369,7 @@ class Topdown2DPoseDataset(SimpleCompiledPoseDataset):
         self.keep_z = keep_z
         self.skeleton.datadim = 2 if not self.keep_z else 3
         self.skeleton.keypoints = [self.skeleton.keypoints[idx] for idx in self.keypoints_keep_indices]
+        logger.warning(f"Topdown2DPoseDataset: skeleton keypoints n={len(self.skeleton.keypoints)}")
         self.skeleton.skeleton_name += "_2d"
 
         body_region_indices = []
@@ -389,85 +402,84 @@ class Topdown2DPoseDataset(SimpleCompiledPoseDataset):
 
 
 class CalMS21PoseDataset(SimpleCompiledPoseDataset):
+    def data_preload(self):
+        self.predictions = np.load(self.dataroot, allow_pickle=True)[()]['annotator-id_0']
+        self.datapaths = sorted(list(self.predictions.keys()))
+    
     def _process_data(self, data: np.ndarray):
         data = self._scale(data)
         data = self._trim(data)
-        data = data.reshape(-1, *data.shape[2:])
-        data = data.transpose((0, 2, 1))
+        # bugfix: transpose first, otherwise the two animals are mixed in time
+        if isinstance(data, torch.Tensor):
+            data = data.permute(1, 0, 2, 3)
+            data = data.flatten(0, 1)
+            data = data.permute(0, 2, 1)
+        else:
+            data = data.transpose((1, 0, 2, 3))
+            data = data.reshape(-1, *data.shape[2:])
+            data = data.transpose((0, 2, 1))
         data = self._align(data)
         data = self._normalize(data)
         return data
 
-    def _load_data(self):
-        labels = np.load(self.dataroot, allow_pickle=True)[()]['annotator-id_0']
-        sequence_names = sorted(list(labels.keys()))
+    def _load(self, dp):
+        data = self.predictions[dp]["keypoints"] # [n_frames, 2-mice, 2, 7]
+        if self.torch_processing:
+            data = torch.from_numpy(data).float().to(self.torch_device)
+        return data
 
-        self.pose3d, self.num_frames = [], []
-        self.raw_num_frames = 0
-        
-        for dp in tqdm(sequence_names, desc="Preprocess"):
-            data = labels[dp]["keypoints"] #[n_frames, 2-mice, 2, 7)]
-            data = self._process_data(data)
+    def _load_data(self):
+        for dp in tqdm(self.datapaths, desc="Preprocess"):
+            data, n_frames = self._load_single(dp)
+            if self.check_nan(data):
+                logger.warning(f"NaN values found in {dp}, skipping...")
+                continue
             
-            if np.isnan(data).any():
-                continue
-
-            self.raw_num_frames += len(data)
             self.pose3d.append(data)
-            self.num_frames.append(data.shape[0])
+            self.num_frames.append(n_frames)
         
-        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
-        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
-        self.pose_dim = self.pose3d.shape[-1]
+        self._postproc_data()
+
+    def check_nan(self, data):
+        if isinstance(data, torch.Tensor):
+            return torch.isnan(data).any().item()
+        elif isinstance(data, np.ndarray):
+            return np.isnan(data).any()
 
 
-class MoSeqDLC2DDataset(SimpleCompiledPoseDataset):
-    def __init__(self, keep_z: bool = False, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        
-        self.keep_z = keep_z
-        self.skeleton.datadim = 2 if not self.keep_z else 3
+class MoSeqDLC2DDataset(CalMS21PoseDataset):
+    def data_preload(self):
+        self.datapaths = list_files_with_exts(self.dataroot, [".h5", ".hdf5"])
+    
+    def _load(self, dp):
+        name = _name_from_path(dp, False, '-', True)
+        new_coordinates, _, _ = _deeplabcut_loader(dp, name)
+        data = new_coordinates[name][:, 1:]
+        data = np.ascontiguousarray(data)  # ensure contiguous array for processing
+        if self.torch_processing:
+            data = torch.from_numpy(data).float().to(self.torch_device)
+        return data
 
-        if self.keep_z:
-            self.pose3d = torch.cat([self.pose3d, torch.zeros(*self.pose3d.shape[:2], 1)], dim=-1)
-            logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
-
-    def _load_data(self):
-        filepaths = list_files_with_exts(self.datapaths[0], [".h5", ".hdf5"])
-        
-        self.pose3d, self.num_frames = [], []
-        self.raw_num_frames = 0
-
-        for filepath in tqdm(filepaths, desc=f"Loading keypoints", ncols=72):
-            name = _name_from_path(
-                filepath, False, '-', True
-            )
-            new_coordinates, new_confidences, bodyparts = _deeplabcut_loader(
-                filepath, name
-            )
-            data = new_coordinates[name][:, 1:]
-            data = self._process_data(data)
-            if np.isnan(data).any():
-                continue
-
-            self.raw_num_frames += len(data)
-            self.pose3d.append(data)
-            self.num_frames.append(data.shape[0])
-        
-        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
-        
-        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
-        self.pose_dim = self.pose3d.shape[-1]
+    def _process_data(self, data: np.ndarray):
+        data = self._scale(data)
+        data = self._trim(data)
+        data = self._align(data)
+        data = self._normalize(data)
+        return data
 
 
-class RatActionDataset(SimpleCompiledPoseDataset):
+class RatActionDataset(SyntheticPoseDataset):
     def _load_action_data(self):
         self.dataset_name = "rat23"
         
-        self.frame_mapping_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/classEmbedSave20230206.mat'
-        self.action_label_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/classEmbedSave20230206info.txt'
+        datadrive = "/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun"
+        if not os.path.exists(datadrive):
+            datadrive = "/hpc/group/tdunn/tqxli/bigrun"
+         
+        self.frame_mapping_path = datadrive + '/classEmbedSave20230206.mat'
+        self.action_label_path = datadrive + '/classEmbedSave20230206info.txt'
         self.action_mapper = np.load(
-            "/media/mynewdrive/datasets/dannce/social_rat/clustering/bigrun/coarse_behavior_mapper.npy", allow_pickle=True
+            datadrive + "/coarse_behavior_mapper.npy", allow_pickle=True
         )[()]
         self.coarse_actions = ['idle', 'sniff/head', 'groom', 'scrunched', 'crouched', 'reared', 'explore', 'locomotion', 'error']
         self.action_id_mapper = {action: idx for idx, action in enumerate(self.coarse_actions)}
@@ -487,22 +499,18 @@ class RatActionDataset(SimpleCompiledPoseDataset):
         ]
         mapdict = {fn.split('/')[-1]: c for fn, c in zip(foldernames, cluster_indexes)}
         return mapdict
-    
-    def _load_data(self):
-        predictions = np.load(self.dataroot, allow_pickle=True)[()]
-        
-        action_data = self._load_action_data()
-        
-        self.pose3d, self.num_frames = [], []
-        self.actions = []
-        self.raw_num_frames = 0
 
+    def _data_preload(self):
+        self.predictions = np.load(self.dataroot, allow_pickle=True)[()]
+
+    def _load_data(self):
+        action_data = self._load_action_data()
+        self.actions, self.actions_full = [], []
+        
         for dp in tqdm(self.datapaths, desc="Preprocess"):
-            data = predictions[dp]
-            self.raw_num_frames += len(data)
-            data = self._process_data(data)
+            data, n_frames = self._load_single(dp)
             self.pose3d.append(data)
-            self.num_frames.append(data.shape[0])
+            self.num_frames.append(n_frames)
             
             action_labels = action_data[dp]
             action_labels = self._trim(action_labels)
@@ -512,12 +520,11 @@ class RatActionDataset(SimpleCompiledPoseDataset):
             ]
             
             self.actions.append(action_labels_coarse)
-
-        self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
-        logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
-        self.pose_dim = self.pose3d.shape[-1]
-
+            self.actions_full.append(action_labels)
+        
+        self._postproc_data()
         self.actions = torch.from_numpy(np.concatenate(self.actions)).long()
+        self.actions_full = torch.from_numpy(np.concatenate(self.actions_full)).long()
     
     def __getitem__(self, index):
         start = index * self.t_stride
@@ -537,13 +544,17 @@ class MouseActionDataset(RatActionDataset):
     def _load_action_data(self):
         self.dataset_name = "mouse23"
         
+        datadrive = "/media/mynewdrive/datasets/dannce/social_rat/clustering/mouse"
+        if not os.path.exists(datadrive):
+            datadrive = "/hpc/group/tdunn/tqxli/bigrun/mouse"
+        
         self.coarse_actions = ['idle', 'sniff/head', 'groom', 'scrunched', 'crouched', 'reared', 'explore', 'locomotion', 'error']
         self.action_id_mapper = {action: idx for idx, action in enumerate(self.coarse_actions)}
         self.action_mapper = np.load(
-            "/media/mynewdrive/datasets/dannce/social_rat/clustering/mouse/coarse_behavior_mapper.npy", allow_pickle=True
+            datadrive + "/coarse_behavior_mapper.npy", allow_pickle=True
         )[()]
         
-        embedding_info_path = '/media/mynewdrive/datasets/dannce/social_rat/clustering/mouse/mouse_embedding_info.mat'
+        embedding_info_path = datadrive + '/mouse_embedding_info.mat'
         embedding_info = sio.loadmat(embedding_info_path)
         exp_names = [file[0][0].split('\\')[-1] for file in embedding_info['allMOUSEL_files']]
         frame_mappings = embedding_info['wrFINE']
@@ -576,7 +587,6 @@ class RatActionLatentDataset(RatActionDataset):
 
         ckpt = torch.load(self.checkpoint_path)
         self.ds = ds = 2 ** ckpt["config"].model.encoder.channel_encoder.n_ds
-        breakpoint()
         self.codebooks = [v for k, v in ckpt["model"].items() if "codebook" in k]
 
         assert self.embeddings.shape[0] * ds == self.pose3d.shape[0]
