@@ -57,11 +57,21 @@ class BasePoseDataset(Dataset):
         self.t_jitter = t_jitter is not None
         self.t_jitter_range = t_jitter
         
+        self.t_upsample = t_upsample
+        self.upsample_mode = upsample_mode
+        
         # process with torch Tensors for acceleration
         self.torch_processing = torch_processing
         self.torch_device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.torch_bs = torch_bs # actual frame number = seqlen * torch_bs
-        logger.info(f"Processing with torch: {torch_processing} {self.torch_device}")
+        logger.info(f"Processing with torch: {torch_processing} (device: {self.torch_device})")
+        
+        # only for debugging/shuffling baselines
+        self.shuffle = shuffle
+        self.shuffle_on = shuffle is not None
+        logger.warning(f"Random shuffle: {self.shuffle}")
+        
+        self.velocity_threshold = velocity_threshold
 
         self.pose3d, self.num_frames = [], []
         self.raw_num_frames = 0
@@ -88,6 +98,34 @@ class BasePoseDataset(Dataset):
     def _scale(self, data: np.ndarray):
         return data[:: self.t_downsample] * self.scale
 
+    def _upsample(self, data: np.ndarray):
+        if self.t_upsample is None or self.t_upsample == 1 or self.t_downsample == 1:
+            return data
+        logger.info('Upsampling data by factor {} ({}).'.format(self.t_upsample, self.upsample_mode))
+        
+        if self.upsample_mode:
+            data = torch.repeat_interleave(data, self.t_upsample, dim=0)
+        else:
+            data_device = data.device if isinstance(data, torch.Tensor) else None
+            data = data.detach().cpu().numpy() if isinstance(data, torch.Tensor) else data
+            data_shape = data.shape
+            data = data.reshape(data.shape[0], -1)
+            data_interp = []
+            for i in range(data.shape[-1]):
+                data_interp.append(
+                    np.interp(
+                        np.arange(0, len(data), 1 / self.t_upsample),
+                        np.arange(len(data)),
+                        data[:, i],
+                    )
+                )
+            data_interp = np.stack(data_interp, axis=-1)
+            data_interp = data_interp.reshape(data_interp.shape[0], *data_shape[1:])
+            data = torch.from_numpy(data_interp).float() if data_device is None else torch.from_numpy(data_interp).float().to(data_device)
+        
+        logger.info('Current data shape: {}'.format(data.shape))
+        return data
+
     def _trim(self, data: np.ndarray):
         num_frames = data.shape[0]
         max_chunks = num_frames // self.seqlen
@@ -113,7 +151,7 @@ class BasePoseDataset(Dataset):
             aligned = torch.zeros(aligned_shape, device=self.torch_device)
         else:
             aligned = np.zeros(aligned_shape)
-        
+
         n_frames = joints3D.shape[0]
         bs = self.torch_bs if self.torch_processing else 1
         step = self.seqlen * bs
@@ -147,6 +185,7 @@ class BasePoseDataset(Dataset):
 
     def _process_data(self, data: np.ndarray):
         data = self._scale(data)
+        data = self._upsample(data)
         data = self._trim(data)
         data = self._align(data)
         data = self._normalize(data)
@@ -166,6 +205,40 @@ class BasePoseDataset(Dataset):
             self.pose3d = torch.from_numpy(np.concatenate(self.pose3d)).float()
         logger.info(f"Dataset {self.name}: {self.pose3d.shape}")
         self.pose_dim = self.pose3d.shape[-1]
+        
+        if self.shuffle_on:
+            if self.shuffle == "frame":
+                perm = torch.randperm(self.pose3d.shape[0])
+                logger.warning("Frames randomly shuffled!")
+                self.pose3d = self.pose3d[perm]
+            elif self.shuffle == "all":
+                n_frames, n_kpts = self.pose3d.shape[:2]
+                perm = torch.randperm(n_frames*n_kpts)
+                logger.warning("All keypoints randomly shuffled!")
+                self.pose3d = self.pose3d.flatten(0, 1)[perm].reshape(n_frames, n_kpts, -1)
+        
+        if self.velocity_threshold is not None:
+            # filter out frames with velocity above threshold
+            pose3d = deepcopy(self.pose3d)
+            pose3d = pose3d.reshape(-1, self.seqlen, *pose3d.shape[1:])
+            pose3d_vel = pose3d[:, 1:, :] - pose3d[:, :-1, :]
+            pose3d_vel = torch.norm(pose3d_vel, dim=-1).mean(-1)
+            # print(pose3d_vel.min(), pose3d_vel.max(), torch.median(pose3d_vel))
+            
+            # pose3d_vel_sorted = np.sort(pose3d_vel.flatten(0, 1))
+            # n_samples = pose3d_vel_sorted.shape[0]
+            # print(pose3d_vel_sorted[int(n_samples * 0.95)])
+            
+            to_remove = []
+            for seqid, seq in enumerate(pose3d_vel):
+                if torch.any(seq > self.velocity_threshold):
+                    to_remove.append(seqid)
+            to_keep = set(range(pose3d.shape[0])) - set(to_remove)
+            to_keep = torch.tensor(list(to_keep))
+            logger.info('Filtered out {} sequences with velocity above threshold {}.'.format(
+                len(to_remove), self.velocity_threshold))
+            self.pose3d = pose3d[to_keep].flatten(0, 1)
+            logger.info(f"Dataset {self.name} after velocity filtering: {self.pose3d.shape}")
 
     def _load_data(self):
         for dp in tqdm(self.datapaths, desc="Preprocess"):
@@ -176,7 +249,8 @@ class BasePoseDataset(Dataset):
         self._postproc_data()
 
     def __len__(self):
-        return (sum(self.num_frames) - self.seqlen) // self.t_stride + 1
+        # return (sum(self.num_frames) - self.seqlen) // self.t_stride + 1
+        return (len(self.pose3d) - self.seqlen) // self.t_stride + 1
 
     def __getitem__(self, index):
         start = index * self.t_stride
