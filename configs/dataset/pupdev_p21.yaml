@@ -13,11 +13,13 @@ alignment: lock_facing
 normalize: false
 scale: 0.02
 seqlen: 128
+# t_downsample: 2
+t_downsample: 1
 
 split:
-  method: subject
+  method: fraction
   split_ids: []
-  split_ids_train: ['pup_one', 'pup_two', 'pup_three', 'pup_four', 'pup_five']
+  split_ids_train: ['pup_one', 'pup_two', 'pup_three', 'pup_four', 'pup_five',' pup_six']
   split_ids_val: ['pup_six']
   train_frac: 0.9
   mocap_type: mat

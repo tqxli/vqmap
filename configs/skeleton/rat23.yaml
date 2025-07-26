@@ -17,7 +17,8 @@ body_mapping:
 keypoints: ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout', 'SpineL', 'TailBase', 'ShoulderL', 'ElbowL', 'WristL', 'HandL', 'ShoulderR', 'ElbowR', 'WristR', 'HandR', 'HipL', 'KneeL', 'AnkleL', 'FootL', 'HipR', 'KneeR', 'AnkleR', 'FootR']
 
 kinematic_tree:
-  - ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout', 'EarL']
+  # - ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout', 'EarL']
+  - ['SpineM', 'SpineF', 'EarL', 'EarR', 'Snout']
   - ['SpineM', 'SpineL', 'TailBase']
   - ['SpineF', 'ShoulderL', 'ElbowL', 'WristL', 'HandL']
   - ['SpineF', 'ShoulderR', 'ElbowR', 'WristR', 'HandR']

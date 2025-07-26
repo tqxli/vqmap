@@ -11,11 +11,12 @@ datapaths:
 data_rep: xyz
 alignment: lock_facing
 normalize: false
-scale: 0.02
+scale: 0.03
 seqlen: 128
 t_downsample: 1
+t_stride:
 
-keep_z: false
+# keep_z: false
 
 split:
   method: fraction

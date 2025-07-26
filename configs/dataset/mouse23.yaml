@@ -15,6 +15,7 @@ alignment: lock_facing
 normalize: false
 scale: 0.02
 seqlen: 128
+t_stride:
 
 split:
   method: subject

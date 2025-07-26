@@ -49,7 +49,11 @@ center_keypoint: SpineM
 anterior_keypoint:
   - HeadF
   - HeadB
-posterior_keypoint: SpineL
+  - HeadL
+posterior_keypoint: 
+  - HipL
+  - HipR
+  - SpineL
 align_direction: x
 
 body_mapping:

@@ -13,12 +13,12 @@ alignment: lock_facing
 normalize: false
 scale: 0.01
 seqlen: 128
-t_downsample: 3
+# t_downsample: 3
 
 split:
   method: subject
-  split_ids_train: ['mocap-s1-d1']
-  split_ids_val:
+  split_ids_val: ['mocap-s1-d1']
+  split_ids_train:
     - mocap-s1-d1
     - mocap-s2-d1
     - mocap-s3-d1

@@ -7,12 +7,13 @@ _target_: csbev.dataset.base.SimpleCompiledPoseDataset
 name: rat23
 dataset_type: dannce_lone
 datapaths: 
-dataroot: /media/mynewdrive/datasets/dannce/social_rat/SCN2A_WK1/SCN2A_WK1.npy
+dataroot: /media/mynewdrive/datasets/dannce/social_rat/SCN2A_WK1.npy
 data_rep: xyz
 alignment: lock_facing
 normalize: false
 scale: 0.01
 seqlen: 128
+t_stride: 
 
 split:
   method: subject

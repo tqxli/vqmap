@@ -25,9 +25,10 @@ body_mapping:
 
 kinematic_tree:
   - ['Neck', 'LeftEar', 'RightEar', 'Nose', 'LeftEar']
+  - ['Neck', 'RightEar']
   - ['Neck', 'Tail', 'LeftHip']
   - ['Neck', 'Tail', 'RightHip']
 
-anterior_keypoint: ['Nose']
+anterior_keypoint: ['LeftEar', 'RightEar']
 posterior_keypoint: ['Tail']
 align_direction: x
