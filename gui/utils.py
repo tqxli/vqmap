@@ -353,6 +353,10 @@ class ModelWrapper:
             tag: instantiate(cfg_model.datasets[tag].skeleton)
             for tag in cfg_model.datasets.keys()
         }
+        # self.skeletons = {}
+        # for tag in cfg_model.datasets.keys():
+            # skeleton = instantiate(cfg_model.datasets[tag].skeleton)
+            # self.skeletons[skeleton.skeleton_name] = skeleton
         self.skeleton_names = list(self.skeletons.keys())
         self.default_skeleton = self.skeletons[self.skeleton_names[0]]
         self.default_skeleton_name = self.skeleton_names[0]
@@ -405,9 +409,7 @@ class ModelWrapper:
             print(f"Loaded embeddings {codes.shape} for {dataset_name} from {savepath}")
             return codes.detach().cpu().numpy(), pose3d, dataset_name
 
-        dataloader = DataLoader(
-            dataset, shuffle=False, **self.cfg_model.dataloader["val"]
-        )
+        dataloader = DataLoader(dataset, shuffle=False, batch_size=32, pin_memory=True)
         codes = []
         for batch in tqdm(dataloader, desc="Embedding dataset"):
             batch = move_data_to_device(batch, self.device)
