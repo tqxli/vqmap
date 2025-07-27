@@ -25,9 +25,11 @@ pip install -e .
 ```
 
 ## :star: Quick demo
-Open `demo/run-inference.ipynb` and get started!
+Download example data and model checkpoint from [here](https://duke.app.box.com/folder/333003183760?s=n9l5swmdbyg94z0o94meh1wv4bv1ao36) and unzip under the `demo` directory.
 
-For model training, please refer to `demo/launch-train.py`.
+Open [`demo/run-inference.ipynb`](./demo/run-inference.ipynb) and get started!
+
+For model training, please refer to [`demo/launch-train.py`](./demo/launch-train.py).
 
 ## :bulb: GUI usage
 Start the GUI by:
