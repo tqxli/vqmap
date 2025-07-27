@@ -5,7 +5,7 @@ defaults:
   # - dataset@datasets.calms21: calms21
   # - dataset@datasets.mouse_moseq_2d: mouse_moseq_2d
 
-  # - dataset@datasets.rat23: rat23
+  - dataset@datasets.rat23: rat23
   # - dataset@datasets.mouse_demo: mouse_demo
   # - dataset@datasets.mouse44: mouse44
   # - dataset@datasets.mouse23: mouse23
