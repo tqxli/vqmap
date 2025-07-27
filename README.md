@@ -24,12 +24,12 @@ pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https
 pip install -e .
 ```
 
-## :star:Quick demo
+## :star: Quick demo
 Open `demo/run-inference.ipynb` and get started!
 
 For model training, please refer to `demo/launch-train.py`.
 
-## :computer: GUI usage
+## :bulb: GUI usage
 Start the GUI by:
 ```
 python -m gui.main
