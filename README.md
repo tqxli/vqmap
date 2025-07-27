@@ -27,6 +27,8 @@ pip install -e .
 ## :star:Quick demo
 Open `demo/run-inference.ipynb` and get started!
 
+For model training, please refer to `demo/launch-train.py`.
+
 ## :computer: GUI usage
 Start the GUI by:
 ```
