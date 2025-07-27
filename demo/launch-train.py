@@ -18,12 +18,18 @@ def hparam_sweep(param_dict: Dict[str, List]):
 
 
 if __name__ == "__main__":
+    # CHANGE expdir if you want to save to a different directory
     expdir = "models_local"
+
+    # we follow the hydra convention for specifying config in the command line
+    # check `configs/train.yaml` for more details
     base_command = ["python ../csbev/core/train.py"]
     base_command += [f"expdir={expdir}"]
     base_command += ["automatic_naming=True"]
     base_command += ["model/bottleneck=quantizer_mg_res"]
     
+    # hyperparameter sweep can be enabled
+    # if multiple parameters are specified for the same argument
     hparams = {        
         "train.augmentation.lr_flip_prob": [1.0],
         "model.lambdas.assignment": [0.01],
