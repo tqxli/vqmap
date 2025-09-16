@@ -23,6 +23,9 @@ conda activate vqmap
 pip install torch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 --index-url https://download.pytorch.org/whl/cu118
 pip install -e .
 ```
+The installation should finish within 5 minutes. 
+
+The codebase has been tested on Linux (Ubuntu 20.04).
 
 ## :star: Quick demo
 Download example data and model checkpoint from [here](https://duke.app.box.com/folder/333003183760?s=n9l5swmdbyg94z0o94meh1wv4bv1ao36) and unzip under the `demo` directory.
